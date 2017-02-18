@@ -152,7 +152,7 @@ end
 function make_tether(obj1, obj2, len)
     t = {}
     t.objs = {obj1, obj2}
-    t.elasticity = 0.5
+    t.elasticity = 0.1
     t.length = len or 2
     t.color = white
     add(tethers, t)
@@ -168,10 +168,21 @@ function constrain_tether(t)
     y1 = obj1.ty + obj1.vy
     x2 = obj2.tx + obj2.vx
     y2 = obj2.ty + obj2.vy
-    if (distance(x1, y1, x2, y2) > t.length) then
+    d = distance(x1, y1, x2, y2)
+    if (d > t.length) then
+        beyond = d - t.length
+        p_beyond = (beyond / t.length)
+        p_x = (x2 - x1) / d
+        p_y = (y2 - y1) / d
+        log('p_x', p_x)
         t.color = red
-        obj1.vx *= -t.elasticity
-        obj1.vy *= -t.elasticity
+        angle = atan2(x2-x1, y2-y1)
+        vectx = cos(angle)
+        vecty = sin(angle)
+        obj1.vx += vectx * t.elasticity
+        obj1.vy += vecty * t.elasticity
+        log('d:'..d..' angle:'..angle..' vect:'..vectx..','..vecty..' beyond:'..beyond)
+        -- ax = 
         -- XXX aim obj1 at obj2, not just "bounce"
     else
         t.color = white
