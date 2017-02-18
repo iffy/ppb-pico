@@ -58,6 +58,9 @@ function make_actor(tx, ty)
     a.ax = 0
     a.ay = 0
 
+    a.anchorx = 0
+    a.anchory = 0
+
     a.facing = RIGHT
 
     a.frame = 0
@@ -77,25 +80,30 @@ end
 --------------------------------------------------
 function draw_balloon(px, py, balloon)
     -- balloon
+    pal(pink, balloon.color)
     spr(1, px, py)
+    pal()
+    
     -- string
-    offset = 0
-    if (balloon.string_facing == RIGHT) then
-        offset = 2
-    elseif (balloon.string_facing == LEFT) then
-        offset = 1
-    end
-    spr(2+offset, px, py+8)
+    -- offset = 0
+    -- if (balloon.string_facing == RIGHT) then
+    --     offset = 2
+    -- elseif (balloon.string_facing == LEFT) then
+    --     offset = 1
+    -- end
+    -- spr(2+offset, px, py+8)
 end
 function make_balloon(tx, ty)
     balloon = make_actor(tx, ty)
     balloon.draw = draw_balloon
-    --balloon.ay = -0.02
+    balloon.ay = -0.02
     balloon.inertia = 0.90
     balloon.mass = 0.1
     balloon.string_lag = 3
     balloon.string_facing = CENTER
     balloon.control = control_balloon
+    balloon.anchory = 4
+    balloon.color = pink
     return balloon
 end
 function control_balloon(balloon)
@@ -119,12 +127,15 @@ end
 function draw_girl(px, py, girl)
     local flip_x = false
     if (girl.facing == LEFT) flip_x = true
+    pal(red, girl.shirt_color)
     spr(7+girl.frame, px, py, 1, 1, flip_x)
+    pal()
 end
 function make_girl(tx, ty)
     girl = make_actor(tx, ty)
     girl.draw = draw_girl
     girl.control = control_girl
+    girl.shirt_color = red
     return girl
 end
 function control_girl(girl)
@@ -159,7 +170,13 @@ function make_tether(obj1, obj2, len)
     return t
 end
 function draw_tether(t)
-    line(t.objs[1].tx * 8, t.objs[1].ty * 8, t.objs[2].tx * 8, t.objs[2].ty * 8, t.color)
+    o1 = t.objs[1]
+    o2 = t.objs[2]
+    line(o1.tx * 8 + o1.anchorx,
+         o1.ty * 8 + o1.anchory,
+         o2.tx * 8 + o2.anchorx,
+         o2.ty * 8 + o2.anchory,
+         t.color)
 end
 function constrain_tether(t)
     obj1 = t.objs[1]
@@ -170,20 +187,15 @@ function constrain_tether(t)
     y2 = obj2.ty + obj2.vy
     d = distance(x1, y1, x2, y2)
     if (d > t.length) then
-        beyond = d - t.length
-        p_beyond = (beyond / t.length)
-        p_x = (x2 - x1) / d
-        p_y = (y2 - y1) / d
-        log('p_x', p_x)
-        t.color = red
+        --t.color = red
         angle = atan2(x2-x1, y2-y1)
         vectx = cos(angle)
         vecty = sin(angle)
         obj1.vx += vectx * t.elasticity
         obj1.vy += vecty * t.elasticity
-        log('d:'..d..' angle:'..angle..' vect:'..vectx..','..vecty..' beyond:'..beyond)
-        -- ax = 
-        -- XXX aim obj1 at obj2, not just "bounce"
+        -- uncomment if you want the string to pull both ways
+        -- obj2.vx -= vectx * t.elasticity
+        -- obj2.vy -= vecty * t.elasticity
     else
         t.color = white
     end
@@ -222,9 +234,24 @@ end
 
 
 function _init()
-    balloon = make_balloon(3, 12)
     girl = make_girl(5, 13)
-    make_tether(balloon, girl, 3)
+    balloon = make_balloon(3, 12)
+    make_tether(balloon, girl, 4)
+
+    girl2 = make_girl(7, 13)
+    girl2.shirt_color = orange
+    b2 = make_balloon(7, 12)
+    b2.color = blue
+    b2.control = function() end
+    make_tether(b2, girl2, 2)
+
+    girl3 = make_girl(9, 13)
+    girl3.shirt_color = dark_purple
+    b3 = make_balloon(6, 12)
+    b3.color = yellow
+    b3.control = function() end
+    make_tether(b3, girl3, 2.4)
+
 end
 
 function _draw()
@@ -233,7 +260,7 @@ function _draw()
     rectfill(0, 0, 128, 128, dark_blue)
 
     -- background 1
-    map(0,3,0,198,16,1)
+    map(0,3,0,97,16,1)
 
     -- ground
     map(0,0,0,101,16,3)
