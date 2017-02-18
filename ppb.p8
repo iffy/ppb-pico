@@ -4,6 +4,9 @@ __lua__
 -- proud pink balloon
 -- by matt haggard
 
+LEFT=0
+RIGHT=1
+
 black=0
 dark_blue=1
 dark_purple=2
@@ -20,6 +23,10 @@ blue=12
 indigo=13
 pink=14
 peach=15
+
+function log(x)
+    printh(x, "pico.log")
+end
 
 function drawtitle()
     color(white)
@@ -47,7 +54,14 @@ function make_actor(tx, ty)
     -- accel
     a.ax = 0
     a.ay = 0
-    a.inertia = 0
+
+    a.facing = RIGHT
+
+    a.frame = 0
+    a.frames = 1
+    a.frameticks = 4
+
+    a.inertia = 0.6
     a.sprite = 1
     -- number of "walking frames"
     add(actors, a)
@@ -57,14 +71,15 @@ end
 --------------------------------------------------
 -- balloon
 --------------------------------------------------
-function draw_balloon(px, py)
+function draw_balloon(px, py, balloon)
     spr(1, px, py)
     -- spr(2+balloon.string, balloon.x, balloon.y+8)
 end
 function make_balloon(tx, ty)
     balloon = make_actor(tx, ty)
     balloon.draw = draw_balloon
-    balloon.ay = -0.01
+    balloon.ay = -0.02
+    balloon.inertia = 0.90
     balloon.control = function() end
     return balloon
 end
@@ -72,8 +87,10 @@ end
 --------------------------------------------------
 -- girl
 --------------------------------------------------
-function draw_girl(px, py)
-    spr(7, px, py)
+function draw_girl(px, py, girl)
+    local flip_x = false
+    if (girl.facing == LEFT) flip_x = true
+    spr(7+girl.frame, px, py, 1, 1, flip_x)
 end
 function make_girl(tx, ty)
     girl = make_actor(tx, ty)
@@ -82,24 +99,19 @@ function make_girl(tx, ty)
     return girl
 end
 function control_girl(girl)
-    local r = rnd(0, 10)
-    printh("control_girl r"..r, "pico.log")
-    if (r <= 2) then
+    local r = rnd(10)
+    if (r <= 1) then
         -- change what you're doing
-        r = rnd(0, 10)
-        if (girl.ax) then
+        r = rnd(10)
+        if (girl.ax != 0) then
             -- she's moving
-            if (r <= 5) then
-                girl.ax *= -1
-            else
-                girl.ax = 0
-            end
+            girl.ax = 0
         else
             -- she's holding still
             if (r <= 5) then
-                girl.ax = 1
+                girl.ax = 0.04
             else
-                girl.ax = -1
+                girl.ax = -0.04
             end
         end
     end
@@ -111,7 +123,7 @@ end
 function draw_actor(a)
     local sx = (a.tx * 8) - 4
     local sy = (a.ty * 8) - 4
-    a.draw(sx, sy)
+    a.draw(sx, sy, a)
 end
 function move_actor(a)
     a.control(a)
@@ -121,11 +133,21 @@ function move_actor(a)
     a.vy += a.ay
     a.vx *= a.inertia
     a.vy *= a.inertia
+
+    a.frame += abs(a.vx) * a.frameticks
+    a.frame += abs(a.vy) * a.frameticks
+    a.frame %= (a.frames+1)
+
+    if (a.vx < 0) then
+        a.facing = LEFT
+    elseif (a.vx > 0) then
+        a.facing = RIGHT
+    end
 end
 
 
 function _init()
-    make_balloon(3, 3)
+    make_balloon(3, 12)
     make_girl(5, 13)
 end
 
