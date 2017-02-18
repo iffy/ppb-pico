@@ -250,7 +250,11 @@ function _init()
     b3 = make_balloon(6, 12)
     b3.color = yellow
     b3.control = function() end
+    b4 = make_balloon(7, 12)
+    b4.color = red
+    b4.control = function() end
     make_tether(b3, girl3, 2.4)
+    make_tether(b4, girl3, 2.2)
 
 end
 
