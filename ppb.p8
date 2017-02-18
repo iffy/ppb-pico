@@ -41,6 +41,7 @@ end
 
 -- all the actors in the world
 actors = {}
+tethers = {}
 
 -- largely copied from collide.p8
 -- make an actor
@@ -64,8 +65,8 @@ function make_actor(tx, ty)
     a.frameticks = 4
 
     a.inertia = 0.6
+    a.mass = 1
     a.sprite = 1
-    a.postmove = function() end
     -- number of "walking frames"
     add(actors, a)
     return a
@@ -89,12 +90,12 @@ end
 function make_balloon(tx, ty)
     balloon = make_actor(tx, ty)
     balloon.draw = draw_balloon
-    balloon.ay = -0.02
+    --balloon.ay = -0.02
     balloon.inertia = 0.90
+    balloon.mass = 0.1
     balloon.string_lag = 3
     balloon.string_facing = CENTER
     balloon.control = control_balloon
-    balloon.postmove = move_string
     return balloon
 end
 function control_balloon(balloon)
@@ -110,8 +111,6 @@ function control_balloon(balloon)
         balloon.string_facing = CENTER
     end
 
-end
-function move_string(balloon)
 end
 
 --------------------------------------------------
@@ -148,6 +147,41 @@ function control_girl(girl)
 end
 
 --------------------------------------------------
+-- tethers
+--------------------------------------------------
+function make_tether(obj1, obj2, len)
+    t = {}
+    t.objs = {obj1, obj2}
+    t.elasticity = 0.5
+    t.length = len or 2
+    t.color = white
+    add(tethers, t)
+    return t
+end
+function draw_tether(t)
+    line(t.objs[1].tx * 8, t.objs[1].ty * 8, t.objs[2].tx * 8, t.objs[2].ty * 8, t.color)
+end
+function constrain_tether(t)
+    obj1 = t.objs[1]
+    obj2 = t.objs[2]
+    x1 = obj1.tx + obj1.vx
+    y1 = obj1.ty + obj1.vy
+    x2 = obj2.tx + obj2.vx
+    y2 = obj2.ty + obj2.vy
+    if (distance(x1, y1, x2, y2) > t.length) then
+        t.color = red
+        obj1.vx *= -t.elasticity
+        obj1.vy *= -t.elasticity
+        -- XXX aim obj1 at obj2, not just "bounce"
+    else
+        t.color = white
+    end
+end
+function distance(x1,y1,x2,y2)
+    return sqrt((x2-x1)^2 + (y2-y1)^2)
+end
+
+--------------------------------------------------
 -- generic actor stuff
 --------------------------------------------------
 function draw_actor(a)
@@ -173,13 +207,13 @@ function move_actor(a)
     elseif (a.vx > 0) then
         a.facing = RIGHT
     end
-    a.postmove(a)
 end
 
 
 function _init()
-    make_balloon(3, 12)
-    make_girl(5, 13)
+    balloon = make_balloon(3, 12)
+    girl = make_girl(5, 13)
+    make_tether(balloon, girl, 3)
 end
 
 function _draw()
@@ -194,11 +228,13 @@ function _draw()
     map(0,0,0,101,16,3)
 
     -- characters
+    foreach(tethers, draw_tether)
     foreach(actors, draw_actor)
     -- fore1
 end
 
 function _update()
+    foreach(tethers, constrain_tether)
     foreach(actors, move_actor)
 end
 
