@@ -4,8 +4,10 @@ __lua__
 -- proud pink balloon
 -- by matt haggard
 
-LEFT=0
+
+CENTER=0
 RIGHT=1
+LEFT=2
 
 black=0
 dark_blue=1
@@ -63,6 +65,7 @@ function make_actor(tx, ty)
 
     a.inertia = 0.6
     a.sprite = 1
+    a.postmove = function() end
     -- number of "walking frames"
     add(actors, a)
     return a
@@ -72,16 +75,43 @@ end
 -- balloon
 --------------------------------------------------
 function draw_balloon(px, py, balloon)
+    -- balloon
     spr(1, px, py)
-    -- spr(2+balloon.string, balloon.x, balloon.y+8)
+    -- string
+    offset = 0
+    if (balloon.string_facing == RIGHT) then
+        offset = 2
+    elseif (balloon.string_facing == LEFT) then
+        offset = 1
+    end
+    spr(2+offset, px, py+8)
 end
 function make_balloon(tx, ty)
     balloon = make_actor(tx, ty)
     balloon.draw = draw_balloon
     balloon.ay = -0.02
     balloon.inertia = 0.90
-    balloon.control = function() end
+    balloon.string_lag = 3
+    balloon.string_facing = CENTER
+    balloon.control = control_balloon
+    balloon.postmove = move_string
     return balloon
+end
+function control_balloon(balloon)
+    accel = 0.04
+    if (btn(0)) balloon.vx -= accel balloon.string_lag = 3 balloon.string_facing = LEFT
+    if (btn(1)) balloon.vx += accel balloon.string_lag = 3 balloon.string_facing = RIGHT
+    if (btn(2)) balloon.vy -= accel
+    if (btn(3)) balloon.vy += accel
+
+    if (balloon.string_lag > 0) then
+        balloon.string_lag -= 1
+    else
+        balloon.string_facing = CENTER
+    end
+
+end
+function move_string(balloon)
 end
 
 --------------------------------------------------
@@ -143,6 +173,7 @@ function move_actor(a)
     elseif (a.vx > 0) then
         a.facing = RIGHT
     end
+    a.postmove(a)
 end
 
 
@@ -169,15 +200,6 @@ end
 
 function _update()
     foreach(actors, move_actor)
-    -- if (btn(0)) balloon.x -= 1 balloon.string = 1 balloon.string_count = 3
-    -- if (btn(1)) balloon.x += 1 balloon.string = 2 balloon.string_count = 3
-    -- if (btn(2)) balloon.y -= 1
-    -- if (btn(3)) balloon.y += 1
-    -- if (balloon.string_count <= 0) then
-    --     balloon.string = 0;
-    -- else
-    --     balloon.string_count -= 1;
-    -- end
 end
 
 
