@@ -1,13 +1,13 @@
 pico-8 cartridge // http://www.pico-8.com
-version 8
+version 10
 __lua__
 -- proud pink balloon
 -- by matt haggard
 
 
-CENTER=0
-RIGHT=1
-LEFT=2
+center=0
+right=1
+left=2
 
 black=0
 dark_blue=1
@@ -30,6 +30,19 @@ function log(x)
     printh(x, "pico.log")
 end
 
+--
+-- http://stackoverflow.com/questions/2282444/how-to-check-if-a-table-contains-an-element-in-lua
+--
+function addtoset(set, key)
+    set[key] = true
+end
+function removefromset(set, key)
+    set[key] = nil
+end
+function setcontains(set, key)
+    return set[key] ~= nil
+end
+
 function drawtitle()
     color(white)
     print("the", 100, 72)
@@ -46,7 +59,7 @@ tethers = {}
 -- largely copied from collide.p8
 -- make an actor
 -- x,y means center of the actor in map tiles (not pixels)
-function make_actor(tx, ty)
+function make_actor(tx, ty, type)
     a = {}
     -- posish
     a.tx = tx
@@ -57,17 +70,24 @@ function make_actor(tx, ty)
     -- accel
     a.ax = 0
     a.ay = 0
+    -- hitbox
+    a.w = 0.4
+    a.h = 0.4
+    a.type = type
+    a.collides_with = {}
+    a.on_collide = function(other) end
 
     a.anchorx = 0
     a.anchory = 0
 
-    a.facing = RIGHT
+    a.facing = right
 
     a.frame = 0
     a.frames = 1
     a.frameticks = 4
 
     a.inertia = 0.6
+    a.bounce = 0.4
     a.mass = 1
     a.sprite = 1
     -- number of "walking frames"
@@ -86,21 +106,23 @@ function draw_balloon(px, py, balloon)
     
     -- string
     -- offset = 0
-    -- if (balloon.string_facing == RIGHT) then
+    -- if (balloon.string_facing == right) then
     --     offset = 2
-    -- elseif (balloon.string_facing == LEFT) then
+    -- elseif (balloon.string_facing == left) then
     --     offset = 1
     -- end
     -- spr(2+offset, px, py+8)
 end
 function make_balloon(tx, ty)
-    balloon = make_actor(tx, ty)
+    balloon = make_actor(tx, ty, 'balloon')
     balloon.draw = draw_balloon
     balloon.ay = -0.02
+    addtoset(balloon.collides_with, 'girl')
+    addtoset(balloon.collides_with, 'balloon')
     balloon.inertia = 0.90
     balloon.mass = 0.1
     balloon.string_lag = 3
-    balloon.string_facing = CENTER
+    balloon.string_facing = center
     balloon.control = control_balloon
     balloon.anchory = 4
     balloon.color = pink
@@ -108,15 +130,15 @@ function make_balloon(tx, ty)
 end
 function control_balloon(balloon)
     accel = 0.04
-    if (btn(0)) balloon.vx -= accel balloon.string_lag = 3 balloon.string_facing = LEFT
-    if (btn(1)) balloon.vx += accel balloon.string_lag = 3 balloon.string_facing = RIGHT
+    if (btn(0)) balloon.vx -= accel balloon.string_lag = 3 balloon.string_facing = left
+    if (btn(1)) balloon.vx += accel balloon.string_lag = 3 balloon.string_facing = right
     if (btn(2)) balloon.vy -= accel
     if (btn(3)) balloon.vy += accel
 
     if (balloon.string_lag > 0) then
         balloon.string_lag -= 1
     else
-        balloon.string_facing = CENTER
+        balloon.string_facing = center
     end
 
 end
@@ -126,13 +148,13 @@ end
 --------------------------------------------------
 function draw_girl(px, py, girl)
     local flip_x = false
-    if (girl.facing == LEFT) flip_x = true
+    if (girl.facing == left) flip_x = true
     pal(red, girl.shirt_color)
     spr(7+girl.frame, px, py, 1, 1, flip_x)
     pal()
 end
 function make_girl(tx, ty)
-    girl = make_actor(tx, ty)
+    girl = make_actor(tx, ty, 'girl')
     girl.draw = draw_girl
     girl.control = control_girl
     girl.shirt_color = red
@@ -149,9 +171,9 @@ function control_girl(girl)
         else
             -- she's holding still
             if (r <= 5) then
-                girl.ax = 0.04
+                girl.ax = rnd(0.15)
             else
-                girl.ax = -0.04
+                girl.ax = -rnd(0.15)
             end
         end
     end
@@ -213,6 +235,8 @@ function draw_actor(a)
     a.draw(sx, sy, a)
 end
 function move_actor(a)
+
+
     a.control(a)
     a.tx += a.vx
     a.ty += a.vy
@@ -226,12 +250,106 @@ function move_actor(a)
     a.frame %= (a.frames+1)
 
     if (a.vx < 0) then
-        a.facing = LEFT
+        a.facing = left
     elseif (a.vx > 0) then
-        a.facing = RIGHT
+        a.facing = right
+    end
+
+    -- actor:actor collisions
+    colliders = collide_actor(a, actors)
+
+    -- actor:wall collisions
+    collide_with_walls(a)
+end
+--
+-- check and react to collisions for a particular actor
+-- returns a table of actors which are collided
+--
+function collide_actor(a, others)
+    local ret = {}
+    local nx = a.tx + a.vx
+    local ny = a.ty + a.vy
+    for other in all(others) do
+        if (other != a and (
+            setcontains(other.collides_with, a.type)
+            or setcontains(a.collides_with, other.type))) then
+            
+            local xdist = nx - other.tx
+            local ydist = ny - other.ty
+            if ((abs(xdist) < (a.w+other.w)) and
+                (abs(ydist) < (a.h+other.h))) then
+                -- they have collided
+                add(ret, other)
+
+                -- copyied from collide
+                -- collision reduces
+                if (a.vx != 0 and abs(xdist) <
+                    abs(a.tx-other.tx)) then
+                    v=a.vx + other.vx
+                    a.vx = v * a.bounce
+                    -- other.vx = v/2
+                end
+
+                if (a.vy != 0 and abs(ydist) <
+                    abs(a.ty-other.ty)) then
+                    v=a.vy + other.vy
+                    a.vy = v * a.bounce
+                    -- other.vy = v/2
+                end
+            end
+        end
+    end
+    return ret
+end
+function collide_with_walls(a)
+    if (a.tx > 17) then
+        a.tx = 17
+    elseif (a.tx < -1) then
+        a.tx = -1
+    end
+    if (a.ty > 13) then
+        a.ty = 13
     end
 end
 
+--------------------------------------------------
+-- narration
+--------------------------------------------------
+narwords = {}
+function splitstring(x, char)
+    ret = {}
+    word = ""
+    for i = 1, #x do
+        local c = sub(x, i, i)
+        if (c == char) then
+            add(ret, word)
+            word = ""
+        else
+            word = word..c
+        end
+    end
+    if (#word) then
+        add(ret, word)
+    end
+    return ret
+end
+function pumpnarration()
+end
+function displaynarration()
+    local x = 10
+    local y = 10
+    for i = 1, #narwords do
+        if (i > 1) x += 3
+        word = narwords[i]
+        nx = x + (4*#word)
+        if (nx > 118) y += 7 x = 10 nx = 10 + (4*#word)
+        print(word, x, y)
+        x = nx
+    end
+end
+function narrate(s)
+    narwords = splitstring(s, " ")
+end
 
 function _init()
     girl = make_girl(5, 13)
@@ -241,7 +359,7 @@ function _init()
     girl2 = make_girl(7, 13)
     girl2.shirt_color = orange
     b2 = make_balloon(7, 12)
-    b2.color = blue
+    b2.color = dark_blue
     b2.control = function() end
     make_tether(b2, girl2, 2)
 
@@ -256,12 +374,13 @@ function _init()
     make_tether(b3, girl3, 2.4)
     make_tether(b4, girl3, 2.2)
 
+    narrate("in the bunch of balloons held by the balloon-selling fellow")
 end
 
 function _draw()
     cls()
     -- sky
-    rectfill(0, 0, 128, 128, dark_blue)
+    rectfill(0, 0, 128, 128, blue)
 
     -- background 1
     map(0,3,0,97,16,1)
@@ -273,11 +392,14 @@ function _draw()
     foreach(tethers, draw_tether)
     foreach(actors, draw_actor)
     -- fore1
+
+    displaynarration()
 end
 
 function _update()
     foreach(tethers, constrain_tether)
     foreach(actors, move_actor)
+    pumpnarration()
 end
 
 
@@ -297,11 +419,11 @@ f999999f0eeee7e00007000000007000000700000007777770000000044ffff0044ffff0081ff100
 00000000bbbbbbbbbbbbbbbb33333333000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 000000003bb3bbbb3bbbb33333333333000000000000000000003330000000000000000000000000000000000000000000000000000000000000000000000000
 00000000333333333333333333333333004444444444440000033333300000000000030000000000000000000000000000000000000000000000000000000000
-000000003333333333333333333333330055000000005500003333233330000000a0030000000000000000000000000000000000000000000000000000000000
+000000003333333333333333333333330005000000005000003333233330000000a0030000000000000000000000000000000000000000000000000000000000
 666666563333333333333333333333330044444444444400033333333230033000b0300000000000000000000000000000000000000000000000000000000000
-6666656633333333333333333333333300550000000055000323333333333330000b300a00000000000000000000000000000000000000000000000000000000
+6666656633333333333333333333333300050000000050000323333333333330000b300a00000000000000000000000000000000000000000000000000000000
 6666566633333333333333333333333304444444444444403333323333333233000b30b000000000000000000000000000000000000000000000000000000000
-6665666633333333333333333333333300550000000055003333333333333333000b3b0000000000000000000000000000000000000000000000000000000000
+6665666633333333333333333333333300050000000050003333333333333333000b3b0000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
