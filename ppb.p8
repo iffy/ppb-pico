@@ -56,11 +56,14 @@ end
 actors = {}
 tethers = {}
 
+NEXTID = 1
 -- largely copied from collide.p8
 -- make an actor
 -- x,y means center of the actor in map tiles (not pixels)
 function make_actor(tx, ty, type)
     a = {}
+    a.id = NEXTID
+    NEXTID += 1
     -- posish
     a.tx = tx
     a.ty = ty
@@ -255,8 +258,6 @@ function draw_actor(a)
     a.draw(sx, sy, a)
 end
 function move_actor(a)
-
-
     a.control(a)
     a.tx += a.vx
     a.ty += a.vy
@@ -285,39 +286,71 @@ end
 -- check and react to collisions for a particular actor
 -- returns a table of actors which are collided
 --
+DONE_COLLISIONS = {}
 function collide_actor(a, others)
     local ret = {}
+    -- this actor's future position
     local nx = a.tx + a.vx
     local ny = a.ty + a.vy
-    for other in all(others) do
-        if (other != a and (
-            setcontains(other.collides_with, a.type)
-            or setcontains(a.collides_with, other.type))) then
+    for o in all(others) do
+        pair_key = min(a.id, o.id)..","..max(a.id, o.id)
+        if (not(setcontains(DONE_COLLISIONS, pair_key))
+            and o != a
+            and (
+                setcontains(o.collides_with, a.type)
+                or setcontains(a.collides_with, o.type))
+            ) then
             
-            local xdist = nx - other.tx
-            local ydist = ny - other.ty
-            if ((abs(xdist) < (a.w+other.w)) and
-                (abs(ydist) < (a.h+other.h))) then
+            -- o actor's future position
+            local onx = o.tx + o.vx
+            local ony = o.ty + o.vy
+
+            local xdist = onx - nx
+            local ydist = ony - ny
+
+            if ((abs(xdist) < (a.w+o.w)) and
+                (abs(ydist) < (a.h+o.h))) then
+                
                 -- they have collided
-                add(ret, other)
+                add(ret, o)
 
-                -- copyied from collide
+                angle = atan2(xdist, ydist)
+                vectx = cos(angle)
+                vecty = sin(angle)
+
+                a_dot = a.vx * vectx + a.vy * vecty
+                o_dot = o.vx * vectx + o.vy * vecty
+
+                optimizedp = (2 * (a_dot - o_dot)) / (a.mass + o.mass)
+
+                a.vx = a.vx - optimizedp * a.mass * vectx
+                a.vy = a.vy - optimizedp * a.mass * vecty
+
+                o.vx = o.vx + optimizedp * o.mass * vectx
+                o.vy = o.vy + optimizedp * o.mass * vecty
+                 
+                -- angle = atan2(x2-x1, y2-y1)
+                -- vectx = cos(angle)
+                -- vecty = sin(angle)
+
+                -- copied from collide demo
                 -- collision reduces
-                if (a.vx != 0 and abs(xdist) <
-                    abs(a.tx-other.tx)) then
-                    v=a.vx + other.vx
-                    a.vx = v * a.bounce
-                    -- other.vx = v/2
-                end
+                -- if (a.vx != 0 and abs(xdist) <
+                --     abs(a.tx-o.tx)) then
+                --     v=a.vx + o.vx
+                --     a.vx = v * a.bounce
+                --     -- o.vx = v/2
+                -- end
 
-                if (a.vy != 0 and abs(ydist) <
-                    abs(a.ty-other.ty)) then
-                    v=a.vy + other.vy
-                    a.vy = v * a.bounce
-                    -- other.vy = v/2
-                end
+                -- if (a.vy != 0 and abs(ydist) <
+                --     abs(a.ty-o.ty)) then
+                --     v=a.vy + o.vy
+                --     a.vy = v * a.bounce
+                --     -- o.vy = v/2
+                -- end
             end
         end
+        addtoset(DONE_COLLISIONS, pair_key)
     end
     return ret
 end
@@ -417,6 +450,8 @@ function _draw()
 end
 
 function _update()
+    -- reset computed collisions
+    DONE_COLLISIONS = {}
     foreach(tethers, constrain_tether)
     foreach(actors, move_actor)
     pumpnarration()
