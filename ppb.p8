@@ -136,6 +136,10 @@ function control_balloon(balloon)
     if (btn(1)) balloon.vel.x += accel balloon.string_lag = 3 balloon.string_facing = right
     if (btn(2)) balloon.vel.y -= accel
     if (btn(3)) balloon.vel.y += accel
+    if (btnp(4)) then
+        balloon.vel = vmul(vnorm(balloon.vel), 1.5)
+    end
+
 
     if (balloon.string_lag > 0) then
         balloon.string_lag -= 1
@@ -256,7 +260,6 @@ function draw_actor(a)
         (a.pos.x * 8) - 4,
         (a.pos.y * 8) - 4,
         a)
-    pset(a.pos.x * 8, a.pos.y * 8, purple)
 end
 function move_actor(a)
     a.control(a)
