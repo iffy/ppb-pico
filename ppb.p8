@@ -65,14 +65,11 @@ function make_actor(tx, ty, type)
     a.id = NEXTID
     NEXTID += 1
     -- posish
-    a.tx = tx
-    a.ty = ty
+    a.pos = vector(tx, ty)
     -- veloc
-    a.vx = 0
-    a.vy = 0
+    a.vel = vector(0, 0)
     -- accel
-    a.ax = 0
-    a.ay = 0
+    a.accel = vector(0, 0)
     -- hitbox
     a.w = 0.4
     a.h = 0.4
@@ -119,7 +116,9 @@ end
 function make_balloon(tx, ty)
     balloon = make_actor(tx, ty, 'balloon')
     balloon.draw = draw_balloon
-    balloon.ay = -0.02
+    balloon.accel.y = -0.02
+    balloon.w = 0.3
+    balloon.h = 0.3
     addtoset(balloon.collides_with, 'girl')
     addtoset(balloon.collides_with, 'balloon')
     balloon.inertia = 0.90
@@ -133,10 +132,10 @@ function make_balloon(tx, ty)
 end
 function control_balloon(balloon)
     accel = 0.04
-    if (btn(0)) balloon.vx -= accel balloon.string_lag = 3 balloon.string_facing = left
-    if (btn(1)) balloon.vx += accel balloon.string_lag = 3 balloon.string_facing = right
-    if (btn(2)) balloon.vy -= accel
-    if (btn(3)) balloon.vy += accel
+    if (btn(0)) balloon.vel.x -= accel balloon.string_lag = 3 balloon.string_facing = left
+    if (btn(1)) balloon.vel.x += accel balloon.string_lag = 3 balloon.string_facing = right
+    if (btn(2)) balloon.vel.y -= accel
+    if (btn(3)) balloon.vel.y += accel
 
     if (balloon.string_lag > 0) then
         balloon.string_lag -= 1
@@ -161,6 +160,8 @@ function make_girl(tx, ty)
     girl.draw = draw_girl
     girl.control = control_girl
     girl.shirt_color = red
+    girl.accel.y = 0.3
+    girl.bounce = 0
     return girl
 end
 function control_girl(girl)
@@ -168,15 +169,15 @@ function control_girl(girl)
     if (r <= 1) then
         -- change what you're doing
         r = rnd(10)
-        if (girl.ax != 0) then
+        if (girl.accel.x != 0) then
             -- she's moving
-            girl.ax = 0
+            girl.accel.x = 0
         else
             -- she's holding still
             if (r <= 5) then
-                girl.ax = rnd(0.15)
+                girl.accel.x = rnd(0.15)
             else
-                girl.ax = -rnd(0.15)
+                girl.accel.x = -rnd(0.15)
             end
         end
     end
@@ -220,26 +221,22 @@ end
 function draw_tether(t)
     o1 = t.objs[1]
     o2 = t.objs[2]
-    line(o1.tx * 8 + o1.anchorx,
-         o1.ty * 8 + o1.anchory,
-         o2.tx * 8 + o2.anchorx,
-         o2.ty * 8 + o2.anchory,
+    line(o1.pos.x * 8 + o1.anchorx,
+         o1.pos.y * 8 + o1.anchory,
+         o2.pos.x * 8 + o2.anchorx,
+         o2.pos.y * 8 + o2.anchory,
          t.color)
 end
 function constrain_tether(t)
     obj1 = t.objs[1]
     obj2 = t.objs[2]
-    x1 = obj1.tx + obj1.vx
-    y1 = obj1.ty + obj1.vy
-    x2 = obj2.tx + obj2.vx
-    y2 = obj2.ty + obj2.vy
-    d = distance(x1, y1, x2, y2)
+    n1 = vadd(obj1.pos, obj1.vel)
+    n2 = vadd(obj2.pos, obj2.vel)
+    vect = vsub(n2, n1)
+    d = vmag(vect)
     if (d > t.length) then
-        angle = atan2(x2-x1, y2-y1)
-        vectx = cos(angle)
-        vecty = sin(angle)
-        obj1.vx += vectx * t.elasticity
-        obj1.vy += vecty * t.elasticity
+        norm = vnorm(vect)
+        obj1.vel = vadd(obj1.vel, vmul(norm, t.elasticity))
         -- uncomment if you want the string to pull both ways
         -- obj2.vx -= vectx * t.elasticity
         -- obj2.vy -= vecty * t.elasticity
@@ -253,46 +250,80 @@ end
 -- generic actor stuff
 --------------------------------------------------
 function draw_actor(a)
-    local sx = (a.tx * 8) - 4
-    local sy = (a.ty * 8) - 4
-    a.draw(sx, sy, a)
+    a.draw(
+        (a.pos.x * 8) - 4,
+        (a.pos.y * 8) - 4,
+        a)
 end
 function move_actor(a)
     a.control(a)
-    a.tx += a.vx
-    a.ty += a.vy
-    a.vx += a.ax
-    a.vy += a.ay
-    a.vx *= a.inertia
-    a.vy *= a.inertia
 
-    a.frame += abs(a.vx) * a.frameticks
-    a.frame += abs(a.vy) * a.frameticks
-    a.frame %= (a.frames+1)
-
-    if (a.vx < 0) then
-        a.facing = left
-    elseif (a.vx > 0) then
-        a.facing = right
-    end
+    a.vel = vadd(a.vel, a.accel)
 
     -- actor:actor collisions
-    colliders = collide_actor(a, actors)
+    colliders = collide_actor(a)
 
     -- actor:wall collisions
     collide_with_walls(a)
+
+    -- move
+    a.pos = vadd(a.pos, a.vel)
+
+    -- accelerate
+    a.vel = vmul(a.vel, a.inertia)
+
+
+    a.frame += a.frameticks * (abs(a.vel.x) + abs(a.vel.y))
+    a.frame %= (a.frames+1)
+
+    if (a.vel.x < 0) then
+        a.facing = left
+    elseif (a.vel.x > 0) then
+        a.facing = right
+    end
 end
+--
+-- vector functions
+--
+function vector(x, y)
+    local v = {}
+    v.x = x
+    v.y = y
+    return v
+end
+function vadd(a, b)
+    return vector(a.x+b.x, a.y+b.y)
+end
+function vsub(a, b)
+    return vector(a.x-b.x, a.y-b.y)
+end
+function vmul(v, f)
+    return vector(v.x*f, v.y*f)
+end
+function vnorm(a)
+    angle = atan2(a.x, a.y)
+    return vector(cos(angle), sin(angle))
+end
+function vmag(a)
+    return distance(0,0,a.x,a.y)
+end
+function vdot(a, b)
+    return a.x*b.x + a.y*b.y
+end
+
 --
 -- check and react to collisions for a particular actor
 -- returns a table of actors which are collided
 --
 DONE_COLLISIONS = {}
-function collide_actor(a, others)
+function collide_actor(a)
     local ret = {}
     -- this actor's future position
-    local nx = a.tx + a.vx
-    local ny = a.ty + a.vy
-    for o in all(others) do
+    pos = a.pos
+    vel = a.vel
+    npos = vadd(pos, vel)
+
+    for o in all(actors) do
         pair_key = min(a.id, o.id)..","..max(a.id, o.id)
         if (not(setcontains(DONE_COLLISIONS, pair_key))
             and o != a
@@ -301,53 +332,54 @@ function collide_actor(a, others)
                 or setcontains(a.collides_with, o.type))
             ) then
             
-            -- o actor's future position
-            local onx = o.tx + o.vx
-            local ony = o.ty + o.vy
+            -- o actor's current and future positions
+            opos = o.pos
+            onpos = vadd(opos, o.vel)
 
-            local xdist = onx - nx
-            local ydist = ony - ny
+            -- delta (current and future)
+            d = vsub(opos, pos)
+            nd = vsub(onpos, npos)
 
-            if ((abs(xdist) < (a.w+o.w)) and
-                (abs(ydist) < (a.h+o.h))) then
+            overlapx = a.w+o.w-abs(nd.x)
+            overlapy = a.h+o.h-abs(nd.y)
+
+            if (overlapx > 0 and overlapy > 0) then
                 
                 -- they have collided
                 add(ret, o)
 
-                angle = atan2(xdist, ydist)
-                vectx = cos(angle)
-                vecty = sin(angle)
+                norm = vnorm(nd)
 
-                a_dot = a.vx * vectx + a.vy * vecty
-                o_dot = o.vx * vectx + o.vy * vecty
+                a_dot = vdot(vel, norm)
+                o_dot = vdot(o.vel, norm)
 
-                optimizedp = (2 * (a_dot - o_dot)) / (a.mass + o.mass)
+                totmass = (a.mass + o.mass)
 
-                a.vx = a.vx - optimizedp * a.mass * vectx
-                a.vy = a.vy - optimizedp * a.mass * vecty
+                optimizedp = (2 * (a_dot - o_dot)) / totmass
 
-                o.vx = o.vx + optimizedp * o.mass * vectx
-                o.vy = o.vy + optimizedp * o.mass * vecty
-                 
+                a.vel = vsub(a.vel, vmul(norm, optimizedp * o.mass))
+
+                -- a.vx -= optimizedp * o.mass * vectx
+                -- a.vy -= optimizedp * o.mass * vecty
+
+                o.vel = vadd(o.vel, vmul(norm, optimizedp * a.mass))
+
+                -- o.vx += optimizedp * a.mass * vectx
+                -- o.vy += optimizedp * a.mass * vecty
+                
+                -- fix overlap
+
+                if (abs(optimizedp) < 0.1) then
+                    -- a.vx -= abs(overlapx) * (o.mass / totmass) / 2
+                    -- a.vy -= abs(overlapy) * (o.mass / totmass) / 2
+                    -- o.vx += abs(overlapx) * (a.mass / totmass) / 10
+                    -- o.vy += abs(overlapy) * (a.mass / totmass) / 10
+                end
+
                 -- angle = atan2(x2-x1, y2-y1)
                 -- vectx = cos(angle)
                 -- vecty = sin(angle)
 
-                -- copied from collide demo
-                -- collision reduces
-                -- if (a.vx != 0 and abs(xdist) <
-                --     abs(a.tx-o.tx)) then
-                --     v=a.vx + o.vx
-                --     a.vx = v * a.bounce
-                --     -- o.vx = v/2
-                -- end
-
-                -- if (a.vy != 0 and abs(ydist) <
-                --     abs(a.ty-o.ty)) then
-                --     v=a.vy + o.vy
-                --     a.vy = v * a.bounce
-                --     -- o.vy = v/2
-                -- end
             end
         end
         addtoset(DONE_COLLISIONS, pair_key)
@@ -355,13 +387,17 @@ function collide_actor(a, others)
     return ret
 end
 function collide_with_walls(a)
-    if (a.tx > 17) then
-        a.tx = 17
-    elseif (a.tx < -1) then
-        a.tx = -1
+    npos = vadd(a.pos, a.vel)
+    if (npos.x > 15) then
+        a.pos.x = 15
+        a.vel.x = 0
+    elseif (npos.x < 1) then
+        a.pos.x = 1
+        a.vel.x = 0
     end
-    if (a.ty > 13) then
-        a.ty = 13
+    if (npos.y > 13) then
+        a.pos.y = 13
+        a.vel.y = 0
     end
 end
 
@@ -405,9 +441,9 @@ function narrate(s)
 end
 
 function _init()
-    girl = make_girl(5, 13)
+    girl = make_girl(5, 10)
 
-    girl2 = make_girl(7, 13)
+    girl2 = make_girl(7, 10)
     girl2.shirt_color = orange
 
     girl3 = make_girl(9, 13)
