@@ -132,12 +132,13 @@ function make_balloon(tx, ty)
 end
 function control_balloon(balloon)
     accel = 0.04
-    if (btn(0)) balloon.vel.x -= accel balloon.string_lag = 3 balloon.string_facing = left
-    if (btn(1)) balloon.vel.x += accel balloon.string_lag = 3 balloon.string_facing = right
-    if (btn(2)) balloon.vel.y -= accel
-    if (btn(3)) balloon.vel.y += accel
+    local going = vector(0,0)
+    if (btn(0)) going.x -= 1 balloon.vel.x -= accel balloon.string_lag = 3 balloon.string_facing = left
+    if (btn(1)) going.x += 1 balloon.vel.x += accel balloon.string_lag = 3 balloon.string_facing = right
+    if (btn(2)) going.y -= 1 balloon.vel.y -= accel
+    if (btn(3)) going.y += 1 balloon.vel.y += accel
     if (btnp(4)) then
-        balloon.vel = vmul(vnorm(balloon.vel), 1.5)
+        balloon.vel = vadd(balloon.vel, vmul(vnorm(going), 1))
     end
 
 
@@ -330,7 +331,39 @@ end
 function vdot(a, b)
     return a.x*b.x + a.y*b.y
 end
-
+function vcross(a, b)
+    return a.x*b.y - a.y*b.x
+end
+--
+-- Find the intersection point of two rays
+-- http://stackoverflow.com/questions/563198/how-do-you-detect-where-two-line-segments-intersect
+--
+function vintersection(a, ar, b, br)
+    den = vcross(ar, br)
+    unum = vcross(vsub(a, b), ar)
+    if (den == 0) then
+        if (unum == 0) then
+            -- collinear (same line)
+            -- XXX haven't figured this out yet
+            -- t0 = vdot(vsub(b, a), ar) / vdot(ar, ar)
+            -- s_dot_r = vdot(br, ar)
+            -- t1 = t0 + (s_dot_r) / vdot(ar, ar)
+            -- log('t0:'..t0..' t1:'..t1)
+            return false
+        else
+            -- parallel
+            return false
+        end
+    else
+        t = vcross(vsub(b, a), br) / den
+        u = unum / den
+        return {
+            point=vector(vadd(a, vmul(ar, t)), vadd(b, vmul(br, u))),
+            apercent=t,
+            bpercent=u,
+        }
+    end
+end
 --
 -- check and react to collisions for a particular actor
 -- returns a table of actors which are collided
@@ -363,26 +396,44 @@ function collide_actor(a)
             overlapx = a.w+o.w-abs(nd.x)
             overlapy = a.h+o.h-abs(nd.y)
 
+            local dobounce = function()
+                norm = vnorm(d)
+
+                a_dot = vdot(vel, norm)
+                o_dot = vdot(o.vel, norm)
+
+                totmass = (a.mass + o.mass)
+
+                optimizedp = (2 * (a_dot - o_dot)) / totmass
+
+                a.vel = vsub(a.vel, vmul(norm, optimizedp * o.mass))
+                o.vel = vadd(o.vel, vmul(norm, optimizedp * a.mass))
+            end
+
             if (overlapx > 0 and overlapy > 0) then
                 
                 -- they are touching
                 add(ret, o)
 
                 if (vmag(nd) < vmag(d)) then
-                    -- they're getting closer, so bounce them
+                    -- they are getting closer
+                    dobounce()
+                end
 
-                    norm = vnorm(d)
-
-                    a_dot = vdot(vel, norm)
-                    o_dot = vdot(o.vel, norm)
-
-                    totmass = (a.mass + o.mass)
-
-                    optimizedp = (2 * (a_dot - o_dot)) / totmass
-
-                    a.vel = vsub(a.vel, vmul(norm, optimizedp * o.mass))
-                    o.vel = vadd(o.vel, vmul(norm, optimizedp * a.mass))
-                    
+            else
+                isection = vintersection(pos, vel, opos, o.vel)
+                if (not(isection)) then
+                    -- they are parallel
+                else
+                    -- they will or have intersected
+                    if (isection.apercent >= 0
+                        and isection.apercent <= 1
+                        and isection.bpercent >= 0
+                        and isection.bpercent <= 1) then
+                        -- they intersected
+                        log(a.type..a.id..' went through '..o.type..o.id)
+                        dobounce()
+                    end
                 end
 
             end
