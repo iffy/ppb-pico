@@ -540,13 +540,14 @@ addState{
         print("theproudpinkballoon.com", 20, 110)
     end,
     update=function()
+        if (btnp(4) or btnp(5)) then
+            changeToState('seller')
+        end
     end,
     leave=function()
+        destroy_all_actors()
     end,
 }
-function drawtitle()
-    
-end
 
 --------------------------------------------------
 -- state: balloon-seller
