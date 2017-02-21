@@ -102,17 +102,20 @@ function draw_balloon(px, py, balloon)
     pal()
     
     -- string
-    -- offset = 0
-    -- if (balloon.string_facing == right) then
-    --     offset = 2
-    -- elseif (balloon.string_facing == left) then
-    --     offset = 1
-    -- end
-    -- spr(2+offset, px, py+8)
+    if (balloon.drawstring) then
+        offset = 0
+        if (balloon.string_facing == right) then
+            offset = 2
+        elseif (balloon.string_facing == left) then
+            offset = 1
+        end
+        spr(2+offset, px, py+8)
+    end
 end
 function make_balloon(tx, ty)
     balloon = make_actor(tx, ty, 'balloon')
     balloon.draw = draw_balloon
+    balloon.drawstring = false
     balloon.accel.y = -0.02
     balloon.w = 0.3
     balloon.h = 0.3
@@ -526,7 +529,7 @@ addState{
         log('made a balloon')
         balloon = make_balloon(9, 8)
         balloon.accel.y = 0
-        make_tether(balloon, nil, 3)
+        balloon.drawstring = true
     end,
     draw_foreground=function()
         color(white)
