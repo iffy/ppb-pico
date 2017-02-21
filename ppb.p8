@@ -4,8 +4,6 @@ __lua__
 -- proud pink balloon
 -- by matt haggard
 
-state='title'
-
 center=0
 right=1
 left=2
@@ -44,14 +42,6 @@ function setcontains(set, key)
     return set[key] ~= nil
 end
 
-function drawtitle()
-    color(white)
-    print("the", 100, 72)
-    print("proud", 92, 78)
-    print("pink", 96, 84)
-    print("balloon", 84, 90)
-    print("theproudpinkballoon.com", 20, 110)
-end
 
 -- all the actors in the world
 actors = {}
@@ -94,6 +84,12 @@ function make_actor(tx, ty, type)
     -- number of "walking frames"
     add(actors, a)
     return a
+end
+function destroy_actor(a)
+    del(actors, a)
+end
+function destroy_all_actors()
+    actors = {}
 end
 
 --------------------------------------------------
@@ -226,27 +222,41 @@ end
 function draw_tether(t)
     o1 = t.objs[1]
     o2 = t.objs[2]
-    line(o1.pos.x * 8 + o1.anchorx,
-         o1.pos.y * 8 + o1.anchory,
-         o2.pos.x * 8 + o2.anchorx,
-         o2.pos.y * 8 + o2.anchory,
-         t.color)
+    if (o2) then
+        line(o1.pos.x * 8 + o1.anchorx,
+             o1.pos.y * 8 + o1.anchory,
+             o2.pos.x * 8 + o2.anchorx,
+             o2.pos.y * 8 + o2.anchory,
+             t.color)
+    else
+        -- detached tether
+        -- for now, just drop it down
+        line(o1.pos.x * 8 + o1.anchorx,
+             o1.pos.y * 8 + o1.anchory,
+             o1.pos.x * 8 + o1.anchorx,
+             (o1.pos.y + t.length) * 8 + o1.anchory,
+             t.color)
+    end
 end
 function constrain_tether(t)
     obj1 = t.objs[1]
     obj2 = t.objs[2]
-    n1 = vadd(obj1.pos, obj1.vel)
-    n2 = vadd(obj2.pos, obj2.vel)
-    vect = vsub(n2, n1)
-    d = vmag(vect)
-    over = d - t.length
-    if (over > 0) then
-        norm = vnorm(vect)
+    if (obj2) then
+        n1 = vadd(obj1.pos, obj1.vel)
+        n2 = vadd(obj2.pos, obj2.vel)
+        vect = vsub(n2, n1)
+        d = vmag(vect)
+        over = d - t.length
+        if (over > 0) then
+            norm = vnorm(vect)
 
-        obj1.vel = vadd(obj1.vel, vmul(norm, t.elasticity * (1 + (over / t.length))))
-        -- uncomment if you want the string to pull both ways
-        -- obj2.vx -= vectx * t.elasticity
-        -- obj2.vy -= vecty * t.elasticity
+            obj1.vel = vadd(obj1.vel, vmul(norm, t.elasticity * (1 + (over / t.length))))
+            -- uncomment if you want the string to pull both ways
+            -- obj2.vx -= vectx * t.elasticity
+            -- obj2.vy -= vecty * t.elasticity
+        end
+    else
+        -- detached tether
     end
 end
 function distance(x1,y1,x2,y2)
@@ -433,36 +443,139 @@ function narrate(s)
 end
 
 
-
+--------------------------------------------------
+-- game engine
+--------------------------------------------------
+state = {}
+states = {}
 function _init()
-    state='title'
-    -- girl = make_girl(5, 10)
-
-    -- girl2 = make_girl(7, 10)
-    -- girl2.shirt_color = orange
-
-    -- girl3 = make_girl(9, 13)
-    -- girl3.shirt_color = dark_purple
-
-    -- man = make_man(13, 13)
-    -- man.facing = left
-    -- foreach({dark_blue, orange, red, green, yellow}, function(color)
-    --     b = make_balloon(6+rnd(3), 12)
-    --     b.color = color
-    --     b.control = function() end
-    --     make_tether(b, man, 2+rnd(1))
-    -- end)
-    
-
-
-    -- proudpink = make_balloon(3, 12)
-    -- make_tether(proudpink, man, 5)
-
-    -- narrate("in the bunch of balloons held by the balloon-selling fellow")
+    changeToState('title')
 end
 
 function _draw()
-    cls()
+    if (fatalmsg) then
+        cls()
+        cursor(0,0)
+        color(white)
+        print(fatalmsg)
+        return
+    end
+
+    if (state and state.d_clear) then
+        state.d_clear()
+    else
+        cls()
+    end
+    
+    if (state and state.draw_background) state.draw_background()
+    if (state and state.draw_actors) then
+        state.draw_actors()
+    else
+        -- characters
+        foreach(tethers, draw_tether)
+        foreach(actors, draw_actor)
+    end
+
+    if (state and state.draw_foreground) state.draw_foreground()
+end
+
+function _update()
+    if (state.update) state.update()
+
+    done_collisions = {}
+    foreach(tethers, constrain_tether)
+    foreach(actors, move_actor)
+    pumpnarration()
+end
+
+fatalmsg = nil
+function fatal(msg)
+    fatalmsg = msg
+end
+
+function addState(data)
+    -- name, init, update, draw, leave
+    states[data.name] = data
+end
+function changeToState(name)
+    if (not(states[name])) then
+        fatal("no such state:"..name)
+        return
+    end
+    if (state and state.leave) then
+        state.leave()
+    end
+    state = states[name]
+    state.init()
+end
+
+
+--------------------------------------------------
+-- state: title
+--------------------------------------------------
+addState{
+    name='error',
+    draw=function()
+        cls()
+        print("There was an error")
+    end,
+}
+addState{
+    name='title',
+    init=function()
+        log('made a balloon')
+        balloon = make_balloon(9, 8)
+        balloon.accel.y = 0
+        make_tether(balloon, nil, 3)
+    end,
+    draw_foreground=function()
+        color(white)
+        print("the", 100, 72)
+        print("proud", 92, 78)
+        print("pink", 96, 84)
+        print("balloon", 84, 90)
+        print("theproudpinkballoon.com", 20, 110)
+    end,
+    update=function()
+    end,
+    leave=function()
+    end,
+}
+function drawtitle()
+    
+end
+
+--------------------------------------------------
+-- state: balloon-seller
+--------------------------------------------------
+addState{
+name='seller',
+init=function()
+    girl = make_girl(5, 10)
+
+    girl2 = make_girl(7, 10)
+    girl2.shirt_color = orange
+
+    girl3 = make_girl(9, 13)
+    girl3.shirt_color = dark_purple
+
+    man = make_man(13, 13)
+    man.facing = left
+    foreach({dark_blue, orange, red, green, yellow}, function(color)
+        b = make_balloon(6+rnd(3), 12)
+        b.color = color
+        b.control = function() end
+        make_tether(b, man, 2+rnd(1))
+    end)
+    
+    proudpink = make_balloon(3, 12)
+    make_tether(proudpink, man, 5)
+
+    narrate("in the bunch of balloons held by the balloon-selling fellow")
+end,
+update=function()
+end,
+draw_background=function()
     -- sky
     rectfill(0, 0, 128, 128, blue)
 
@@ -471,26 +584,13 @@ function _draw()
 
     -- ground
     map(0,0,0,101,16,3)
-
-    -- characters
-    foreach(tethers, draw_tether)
-    foreach(actors, draw_actor)
-    -- fore1
-
+end,
+draw_foreground=function()
     displaynarration()
-end
-
-function _update()
-    -- reset computed collisions
-    done_collisions = {}
-    foreach(tethers, constrain_tether)
-    foreach(actors, move_actor)
-    pumpnarration()
-end
-
-
-
-
+end,
+leave=function()
+end,
+}
 
 
 __gfx__
