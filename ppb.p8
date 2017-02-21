@@ -234,9 +234,11 @@ function constrain_tether(t)
     n2 = vadd(obj2.pos, obj2.vel)
     vect = vsub(n2, n1)
     d = vmag(vect)
-    if (d > t.length) then
+    over = d - t.length
+    if (over > 0) then
         norm = vnorm(vect)
-        obj1.vel = vadd(obj1.vel, vmul(norm, t.elasticity))
+
+        obj1.vel = vadd(obj1.vel, vmul(norm, t.elasticity * (1 + (over / t.length))))
         -- uncomment if you want the string to pull both ways
         -- obj2.vx -= vectx * t.elasticity
         -- obj2.vy -= vecty * t.elasticity
@@ -254,6 +256,7 @@ function draw_actor(a)
         (a.pos.x * 8) - 4,
         (a.pos.y * 8) - 4,
         a)
+    pset(a.pos.x * 8, a.pos.y * 8, purple)
 end
 function move_actor(a)
     a.control(a)
@@ -345,40 +348,25 @@ function collide_actor(a)
 
             if (overlapx > 0 and overlapy > 0) then
                 
-                -- they have collided
+                -- they are touching
                 add(ret, o)
 
-                norm = vnorm(nd)
+                if (vmag(nd) < vmag(d)) then
+                    -- they're getting closer, so bounce them
 
-                a_dot = vdot(vel, norm)
-                o_dot = vdot(o.vel, norm)
+                    norm = vnorm(d)
 
-                totmass = (a.mass + o.mass)
+                    a_dot = vdot(vel, norm)
+                    o_dot = vdot(o.vel, norm)
 
-                optimizedp = (2 * (a_dot - o_dot)) / totmass
+                    totmass = (a.mass + o.mass)
 
-                a.vel = vsub(a.vel, vmul(norm, optimizedp * o.mass))
+                    optimizedp = (2 * (a_dot - o_dot)) / totmass
 
-                -- a.vx -= optimizedp * o.mass * vectx
-                -- a.vy -= optimizedp * o.mass * vecty
-
-                o.vel = vadd(o.vel, vmul(norm, optimizedp * a.mass))
-
-                -- o.vx += optimizedp * a.mass * vectx
-                -- o.vy += optimizedp * a.mass * vecty
-                
-                -- fix overlap
-
-                if (abs(optimizedp) < 0.1) then
-                    -- a.vx -= abs(overlapx) * (o.mass / totmass) / 2
-                    -- a.vy -= abs(overlapy) * (o.mass / totmass) / 2
-                    -- o.vx += abs(overlapx) * (a.mass / totmass) / 10
-                    -- o.vy += abs(overlapy) * (a.mass / totmass) / 10
+                    a.vel = vsub(a.vel, vmul(norm, optimizedp * o.mass))
+                    o.vel = vadd(o.vel, vmul(norm, optimizedp * a.mass))
+                    
                 end
-
-                -- angle = atan2(x2-x1, y2-y1)
-                -- vectx = cos(angle)
-                -- vecty = sin(angle)
 
             end
         end
