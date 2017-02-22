@@ -66,6 +66,7 @@ function make_actor(tx, ty, type)
     a.h = 0.4
     a.type = type
     a.collides_with = {}
+    a.beholden_to_walls = true
     a.on_collide = function(other) end
 
     a.anchorx = 0
@@ -138,7 +139,7 @@ function control_balloon(balloon)
     if (btn(2)) going.y -= 1 balloon.vel.y -= accel
     if (btn(3)) going.y += 1 balloon.vel.y += accel
     if (btnp(4)) then
-        balloon.vel = vadd(balloon.vel, vmul(vnorm(going), 1))
+        balloon.vel = vadd(balloon.vel, vmul(vnorm(going), 0.5))
     end
 
 
@@ -149,6 +150,8 @@ function control_balloon(balloon)
     end
 
 end
+
+
 
 --------------------------------------------------
 -- girl
@@ -212,6 +215,34 @@ function control_man(man)
 end
 
 --------------------------------------------------
+-- bird
+--------------------------------------------------
+function draw_bird(px, py, bird)
+    local flip_x = false
+    if (bird.facing == left) flip_x = true
+    pal(brown, bird.color)
+    spr(71+bird.frame, px, py, 1, 1, flip_x)
+    pal()
+end
+function make_bird(tx, ty)
+    bird = make_actor(tx, ty, 'bird')
+    bird.draw = draw_bird
+    addtoset(bird.collides_with, 'balloon')
+    bird.inertia = 1
+    bird.mass = 0.5
+    bird.vel.x = 0.2
+    bird.frameticks = 1
+    bird.control = control_bird
+    bird.color = brown
+    bird.beholden_to_walls = false
+    return bird
+end
+function control_bird(bird)
+    if (bird.pos.x > 18 or bird.pos.x < -2) destroy_actor(bird)
+end
+
+
+--------------------------------------------------
 -- tethers
 --------------------------------------------------
 function make_tether(obj1, obj2, len)
@@ -220,8 +251,13 @@ function make_tether(obj1, obj2, len)
     t.elasticity = 0.1
     t.length = len or 2
     t.color = white
+    t.breaking_point = 0.2
+    t.onbreak = nil
     add(tethers, t)
     return t
+end
+function destroy_tether(t)
+    del(tethers, t)
 end
 function draw_tether(t)
     o1 = t.objs[1]
@@ -251,7 +287,9 @@ function constrain_tether(t)
         vect = vsub(n2, n1)
         d = vmag(vect)
         over = d - t.length
-        if (over > 0) then
+        if (t.onbreak and over/t.length > t.breaking_point) then
+            t.onbreak()
+        elseif (over > 0) then
             norm = vnorm(vect)
 
             obj1.vel = vadd(obj1.vel, vmul(norm, t.elasticity * (1 + (over / t.length))))
@@ -285,7 +323,7 @@ function move_actor(a)
     colliders = collide_actor(a)
 
     -- actor:wall collisions
-    collide_with_walls(a)
+    if (a.beholden_to_walls) collide_with_walls(a)
 
     -- move
     a.pos = vadd(a.pos, a.vel)
@@ -453,6 +491,9 @@ function collide_with_walls(a)
     if (npos.y > 13) then
         a.pos.y = 13
         a.vel.y = 0
+    elseif (npos.y < 1) then
+        a.pos.y = 1
+        a.vel.y = 0
     end
 end
 
@@ -502,7 +543,7 @@ end
 state = {}
 states = {}
 function _init()
-    changetostate('title')
+    changetostate('seller')
 end
 
 function _draw()
@@ -605,6 +646,11 @@ addstate{
 addstate{
 name='seller',
 init=function()
+    bird = make_bird(-1, 2)
+    bird = make_bird(17, 4.5)
+    bird.vel.x *= -1.5
+    bird.vel.y = -0.01
+
     girl = make_girl(5, 10)
 
     girl2 = make_girl(7, 10)
@@ -622,10 +668,44 @@ init=function()
         make_tether(b, man, 2+rnd(1))
     end)
     
-    proudpink = make_balloon(3, 12)
-    make_tether(proudpink, man, 5)
+    proudpink = make_balloon(13, 11)
+    tether = make_tether(proudpink, man, 5)
+    tether.onbreak = function()
+        destroy_tether(tether)
+        proudpink.drawstring = true
+    end
 
     narrate("in the bunch of balloons held by the balloon-selling fellow")
+end,
+update=function()
+end,
+draw_background=function()
+    -- sky
+    rectfill(0, 0, 128, 128, blue)
+
+    -- background 1
+    map(0,3,0,97,16,1)
+
+    -- ground
+    map(0,0,0,101,16,3)
+end,
+draw_foreground=function()
+    displaynarration()
+end,
+leave=function()
+end,
+}
+
+--------------------------------------------------
+-- state: flying
+--------------------------------------------------
+addstate{
+name='flying',
+init=function()
+    bird = make_bird(-1, 2)
+    bird = make_bird(17, 4.5)
+    bird.vel.x *= -1.5
+    bird.vel.y = -0.01
 end,
 update=function()
 end,
@@ -682,11 +762,11 @@ f999999f0eeee7e00007000000007000000700000007777770000000044ffff0044ffff0081ff100
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00003333333333330000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00333333333333330000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-03333333333333330000000000000000000000000000000000000000004400000044000000000000000000000000000000000000000000000000000000000000
-33333333333333330000000000000000000000000000000000000000041449040414440400000000000000000000000000000000000000000000000000000000
-33333333333333330000000000000000000000000000000000000000aa449944aa44444400000000000000000000000000000000000000000000000000000000
-33333333333333330000000000000000000000000000000000000000000000000000990000000000000000000000000000000000000000000000000000000000
-33333333333333330000000000000000000000000000000000000000000000000000090000000000000000000000000000000000000000000000000000000000
+03333333333333330000000000000000000000000000000000000000000044000000440000000000000000000000000000000000000000000000000000000000
+33333333333333330000000000000000000000000000000000000000409441404044414000000000000000000000000000000000000000000000000000000000
+33333333333333330000000000000000000000000000000000000000449944aa444444aa00000000000000000000000000000000000000000000000000000000
+33333333333333330000000000000000000000000000000000000000000000000099000000000000000000000000000000000000000000000000000000000000
+33333333333333330000000000000000000000000000000000000000000000000090000000000000000000000000000000000000000000000000000000000000
 03333333333333330000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000544454440000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000454454540000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
