@@ -542,6 +542,38 @@ end
 --------------------------------------------------
 state = {}
 states = {}
+
+timers = {}
+function set_interval(seconds, func)
+    local timer = {
+        func=func,
+        delay=seconds*30,
+        rep=true,
+    }
+    timer.interval = timer.delay
+    add(timers, timer)
+    return timer
+end
+function set_timeout(seconds, func)
+    local timer = set_interval(seconds, func)
+    timer.rep = false
+    return timer
+end
+function clear_timers()
+    timers = {}
+end
+function pump_timers()
+    foreach(timers, function(timer)
+        timer.delay -= 1
+        if (timer.delay <= 0) then
+            timer.func()
+            timer.delay = timer.interval
+            if (not(timer.rep)) del(timers, timer)
+
+        end
+    end)
+end
+
 function _init()
     changetostate('seller')
 end
@@ -574,6 +606,7 @@ function _draw()
 end
 
 function _update()
+    pump_timers()
     if (state.update) state.update()
 
     done_collisions = {}
@@ -646,10 +679,15 @@ addstate{
 addstate{
 name='seller',
 init=function()
-    bird = make_bird(-1, 2)
-    bird = make_bird(17, 4.5)
-    bird.vel.x *= -1.5
-    bird.vel.y = -0.01
+    set_interval(3.9, function()
+        bird = make_bird(-1, 1+rnd(4))
+    end)
+    set_interval(4.1, function()
+        bird = make_bird(17, 1+rnd(5))
+        bird.vel.x *= -1.5
+        bird.vel.y = -0.01
+    end)
+    
 
     girl = make_girl(5, 10)
 
