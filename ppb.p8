@@ -451,6 +451,10 @@ function collide_actor(a)
                 
                 -- they are touching
                 add(ret, o)
+                if ((
+                a.type == 'balloon' and o.type == 'bird') or (a.type == 'bird' and o.type == 'balloon')) then
+                sfx(0)
+                end
 
                 if (vmag(nd) < vmag(d)) then
                     -- they are getting closer
@@ -500,7 +504,8 @@ end
 --------------------------------------------------
 -- narration
 --------------------------------------------------
-narwords = {}
+nar_text = ""
+nar_i = 1
 function splitstring(x, char)
     ret = {}
     word = ""
@@ -518,22 +523,49 @@ function splitstring(x, char)
     end
     return ret
 end
-function pumpnarration()
+function fit_to_lines(x, width)
+    log('fit_to_lines:'..x)
+    width = width or 28
+    ret = ""
+    local rest = x
+    while (#rest != 0) do
+        log('iteration, rest:'..#rest..">"..rest.."<")
+        if (#rest <= width) then
+            ret = ret..rest
+            rest = ""
+        else
+            c = width
+            while (sub(rest,c,c) != " ") do
+                c -= 1
+            end
+            ret = ret..sub(rest,0,c-1)..'\r'
+            rest = sub(rest,c+1)
+        end
+    end
+    return ret
 end
-function displaynarration()
+function pumpnarration()
+    nar_i += 1
+end
+function drawnarration()
     local x = 10
     local y = 10
-    for i = 1, #narwords do
-        if (i > 1) x += 3
-        word = narwords[i]
-        nx = x + (4*#word)
-        if (nx > 118) y += 7 x = 10 nx = 10 + (4*#word)
-        print(word, x, y, white)
-        x = nx
+    local c = 1
+    local columns = 27
+    for i = 1, nar_i do
+        c = sub(nar_text,i,i)
+        if (c == "\r") then
+            y += 7
+            x = 10
+        else
+            print(c, x, y, white)
+            x += 4
+        end
     end
 end
 function narrate(s)
-    narwords = splitstring(s, " ")
+    nar_text = fit_to_lines(s)
+    nar_i = 1
 end
 
 
@@ -603,6 +635,7 @@ function _draw()
     end
 
     if (state and state.draw_foreground) state.draw_foreground()
+    drawnarration()
 end
 
 function _update()
@@ -728,7 +761,6 @@ draw_background=function()
     map(0,0,0,101,16,3)
 end,
 draw_foreground=function()
-    displaynarration()
 end,
 leave=function()
 end,
@@ -932,7 +964,7 @@ __map__
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __sfx__
-001400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00010000386502d650346502865030650236502b6502a6501c65025650156502c650266500e6501d650166500865017650036500a65012650076500f6500d6500a65008650076500665005650046500165000000
 00040020051560a1560e15610156101560b6560a6560f1560e1560d1560b6560c1560d1560e6561015614156181561e1561f15626156271562a1562c1462e1362b6362c626331263312630136391362d12629116
 000000000000037050370501a050131202005037050191500000019150000000c1500000018150000000b1502215029150291501d150000000000000000000000000000000000000000000000000000000000000
 001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
