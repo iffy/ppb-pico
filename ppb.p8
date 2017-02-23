@@ -766,14 +766,15 @@ addstate{
 addstate{
 name='chapter1',
 init=function()
-    set_interval(3.9, function()
-        bird = make_bird(-1, 1+rnd(4))
-    end)
-    set_interval(4.1, function()
-        bird = make_bird(17, 1+rnd(5))
-        bird.vel.x *= -1.5
-        bird.vel.y = -0.01
-    end)
+    -- set_interval(5, function()
+    --     bird = make_bird(-1, 1+rnd(4))
+    --     bird.vel.y = -0.02
+    -- end)
+    -- set_interval(4.1, function()
+    --     bird = make_bird(17, 1+rnd(5))
+    --     bird.vel.x *= -1.5
+    --     bird.vel.y = -0.01
+    -- end)
 
     man = make_man(13, 13)
     man.facing = left
