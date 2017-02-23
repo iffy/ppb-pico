@@ -42,6 +42,52 @@ function setcontains(set, key)
     return set[key] ~= nil
 end
 
+--
+-- A limited Deferred.
+--
+function deferred()
+    local d = {}
+    d.has_result = false
+    d.cbi = 1
+    d.callbacks = {}
+    d.than = function(cb)
+        add(d.callbacks, cb)
+        d.pump()
+        return d
+    end
+    d.pump = function()
+        if (not(d.has_result) or (type(d.result) == 'table' and d.result.than)) return
+        for i=d.cbi,#d.callbacks do
+            d.result = d.callbacks[i](d.result)
+            d.cbi += 1
+            if (type(d.result) == 'table' and d.result.than) then
+                d.result.than(d.resolve)
+                break
+            end    
+        end
+    end
+    d.resolve = function(result)
+        d.has_result = true
+        d.result = result
+        d.pump()
+    end
+    return d
+end
+function unpack(t, from, to)
+  from = from or 1
+  to = to or #t
+  if from > to then return end
+  return t[from], unpack(t, from+1, to)
+end
+-- Ignore a deferred result, then run another function
+function thencall(d, func, ...)
+    local args = {...}
+    d.than(function(ignored)
+        return func(unpack(args))
+    end)
+    return d
+end
+
 
 -- all the actors in the world
 actors = {}
@@ -385,7 +431,6 @@ function vintersection(a, ar, b, br)
             t0 = vdot(vsub(b, a), ar) / vdot(ar, ar)
             s_dot_r = vdot(br, ar)
             t1 = t0 + (s_dot_r) / vdot(ar, ar)
-            log('t0:'..t0..' t1:'..t1)
             return false
         else
             -- parallel
@@ -472,7 +517,6 @@ function collide_actor(a)
                         and isection.bpercent >= 0
                         and isection.bpercent <= 1) then
                         -- they intersected
-                        log(a.type..a.id..' went through '..o.type..o.id)
                         dobounce()
                     end
                 end
@@ -506,6 +550,7 @@ end
 --------------------------------------------------
 nar_text = ""
 nar_i = 1
+nar_d = nil
 function splitstring(x, char)
     ret = {}
     word = ""
@@ -524,12 +569,10 @@ function splitstring(x, char)
     return ret
 end
 function fit_to_lines(x, width)
-    log('fit_to_lines:'..x)
     width = width or 28
     ret = ""
     local rest = x
     while (#rest != 0) do
-        log('iteration, rest:'..#rest..">"..rest.."<")
         if (#rest <= width) then
             ret = ret..rest
             rest = ""
@@ -545,7 +588,12 @@ function fit_to_lines(x, width)
     return ret
 end
 function pumpnarration()
-    nar_i += 1
+    if (nar_i == #nar_text) then
+        nar_d.resolve(true)
+        nar_i += 1
+    else
+        nar_i += 0.5
+    end
 end
 function drawnarration()
     local x = 10
@@ -566,6 +614,8 @@ end
 function narrate(s)
     nar_text = fit_to_lines(s)
     nar_i = 1
+    nar_d = deferred()
+    return nar_d
 end
 
 
@@ -595,19 +645,24 @@ function clear_timers()
     timers = {}
 end
 function pump_timers()
-    foreach(timers, function(timer)
-        timer.delay -= 1
+    for timer in all(timers) do
         if (timer.delay <= 0) then
             timer.func()
             timer.delay = timer.interval
             if (not(timer.rep)) del(timers, timer)
-
+        else
+            timer.delay -= 1
         end
-    end)
+    end
+end
+function wait(seconds)
+    d = deferred()
+    set_timeout(seconds, d.resolve)
+    return d
 end
 
 function _init()
-    changetostate('seller')
+    changetostate('intro')
 end
 
 function _draw()
@@ -671,7 +726,7 @@ end
 
 
 --------------------------------------------------
--- state: title
+-- state: intro
 --------------------------------------------------
 addstate{
     name='error',
@@ -681,9 +736,8 @@ addstate{
     end,
 }
 addstate{
-    name='title',
+    name='intro',
     init=function()
-        log('made a balloon')
         balloon = make_balloon(9, 8)
         balloon.accel.y = 0
         balloon.drawstring = true
@@ -698,7 +752,7 @@ addstate{
     end,
     update=function()
         if (btnp(4) or btnp(5)) then
-            changetostate('seller')
+            changetostate('chapter1')
         end
     end,
     leave=function()
@@ -710,7 +764,7 @@ addstate{
 -- state: balloon-seller
 --------------------------------------------------
 addstate{
-name='seller',
+name='chapter1',
 init=function()
     set_interval(3.9, function()
         bird = make_bird(-1, 1+rnd(4))
@@ -720,15 +774,6 @@ init=function()
         bird.vel.x *= -1.5
         bird.vel.y = -0.01
     end)
-    
-
-    girl = make_girl(5, 10)
-
-    girl2 = make_girl(7, 10)
-    girl2.shirt_color = orange
-
-    girl3 = make_girl(9, 13)
-    girl3.shirt_color = dark_purple
 
     man = make_man(13, 13)
     man.facing = left
@@ -746,7 +791,11 @@ init=function()
         proudpink.drawstring = true
     end
 
-    narrate("in the bunch of balloons held by the balloon-selling fellow")
+    d = narrate("in the bunch of balloons held by the balloon-selling fellow...")
+    thencall(d, wait, 4)
+    thencall(d, narrate, "floated balloons colored blue, orange, red, green and yellow.")
+    thencall(d, wait, 4)
+    thencall(d, narrate, "")
 end,
 update=function()
 end,
