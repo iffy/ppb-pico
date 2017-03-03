@@ -375,33 +375,6 @@ function draw_actor(a)
         (a.pos.y * 8) - 4,
         a)
 end
-function move_actor(a)
-    if (a.control) a.control(a)
-
-    a.vel = vadd(a.vel, a.accel)
-
-    -- actor:actor collisions
-    colliders = collide_actor(a)
-
-    -- actor:wall collisions
-    if (a.beholden_to_walls) collide_with_walls(a)
-
-    -- move
-    a.pos = vadd(a.pos, a.vel)
-
-    -- accelerate
-    a.vel = vmul(a.vel, a.inertia)
-
-
-    a.frame += a.frameticks * (abs(a.vel.x) + abs(a.vel.y))
-    a.frame %= (a.frames+1)
-
-    if (a.vel.x < 0) then
-        a.facing = left
-    elseif (a.vel.x > 0) then
-        a.facing = right
-    end
-end
 --
 -- vector functions
 --
@@ -461,121 +434,120 @@ function vintersection(a, ar, b, br)
         }
     end
 end
---
--- check and react to collisions for a particular actor
--- returns a table of actors which are collided
---
-done_collisions = {}
-function collide_actor(a)
-    local ret = {}
-    -- this actor's future position
-    pos = a.pos
-    vel = a.vel
-    npos = vadd(pos, vel)
 
-    for o in all(actors) do
-        pair_key = min(a.id, o.id)..","..max(a.id, o.id)
-        if (not(setcontains(done_collisions, pair_key))
-            and o != a
-            and (
-                setcontains(o.collides_with, a.type)
-                or setcontains(a.collides_with, o.type))
-            ) then
-            
-            -- o actor's current and future positions
-            opos = o.pos
-            onpos = vadd(opos, o.vel)
-
-            -- delta (current and future)
-            d = vsub(opos, pos)
-            nd = vsub(onpos, npos)
-
-            overlapx = a.w+o.w-abs(nd.x)
-            overlapy = a.h+o.h-abs(nd.y)
-
-            local dobounce = function()
-                norm = vnorm(d)
-
-                a_dot = vdot(vel, norm)
-                o_dot = vdot(o.vel, norm)
-
-                totmass = (a.mass + o.mass)
-
-                optimizedp = (2 * (a_dot - o_dot)) / totmass
-
-                a.vel = vsub(a.vel, vmul(norm, optimizedp * o.mass))
-                o.vel = vadd(o.vel, vmul(norm, optimizedp * a.mass))
-            end
-
-            if (overlapx > 0 and overlapy > 0) then
-                
-                -- they are touching
-                add(ret, o)
-                if ((
-                a.type == 'balloon' and o.type == 'bird') or (a.type == 'bird' and o.type == 'balloon')) then
-                sfx(0)
-                end
-
-                if (vmag(nd) < vmag(d)) then
-                    -- they are getting closer
-                    dobounce()
-                end
-
-            else
-                isection = vintersection(pos, vel, opos, o.vel)
-                if (not(isection)) then
-                    -- they are parallel
-                else
-                    -- they will or have intersected
-                    if (isection.apercent >= 0
-                        and isection.apercent <= 1
-                        and isection.bpercent >= 0
-                        and isection.bpercent <= 1) then
-                        -- they intersected
-                        dobounce()
-                    end
-                end
-
-            end
-        end
-        addtoset(done_collisions, pair_key)
-    end
-    return ret
+--------------------------------------------------
+-- collision detection
+--------------------------------------------------
+collmap = {}
+function setcollmap(s)
+    collmap = splitstring(s, '\n')
 end
--- check if a cell is solid
+function getcollmap(x, y)
+    x = flr(x)+1
+    y = flr(y)
+    if (y < 1 or y > 16) return '1'
+    if (x < 1 or x > 16) return '1'
+    log('getcollmap('..x..','..y..')')
+    return sub(collmap[y+1], x, x)
+end
+
+-- collision from collide
 function solid(x, y)
-    return fget(mget(x, y), 1)
-end
--- check if an actor overlaps a solid spot
-function collide_with_tiles(a)
-    npos = vadd(a.pos, a.vel)
-    return solid(npos.x-a.w, npos.y-a.h) or
-        solid(npos.x+a.w, npos.y-a.h) or
-        solid(npos.x-a.w, npos.y+a.h) or
-        solid(npos.x+a.w, npos.y+a.h)
+    log('solid'..x..','..y)
+    return (getcollmap(x,y) == '1')
 end
 
-function collide_with_walls(a)
-    npos = vadd(a.pos, a.vel)
+-- solid_area
+-- check if a rectangle overlaps
+-- with any walls
 
-    if collide_with_tiles(a)
-    if (fget(mget(npos.x, npos.y)) == 1)
+--(this version only works for
+--actors less than one tile big)
+function solid_area(x,y,w,h)
+ return 
+  solid(x-w,y-h) or
+  solid(x+w,y-h) or
+  solid(x-w,y+h) or
+  solid(x+w,y+h)
+end
 
-    -- Below is for hard-coded walls and floors
-
-    if (npos.x > 15) then
-        a.pos.x = 15
-        a.vel.x = 0
-    elseif (npos.x < 1) then
-        a.pos.x = 1
-        a.vel.x = 0
+-- true if a will hit another
+-- actor after moving dx,dy
+function solid_actor(a, dx, dy)
+ for o in all(actors) do
+  if o != a then
+   local x=(a.pos.x+dx) - o.pos.x
+   local y=(a.pos.y+dy) - o.pos.y
+   if ((abs(x) < (a.w+o.w)) and
+      (abs(y) < (a.h+o.h)))
+   then 
+    
+    -- moving together?
+    -- this allows actors to
+    -- overlap initially 
+    -- without sticking together    
+    if (dx != 0 and abs(x) <
+        abs(a.pos.x-o.pos.x)) then
+     v=a.vel.x + o.vel.y
+     a.vel.x = v/2
+     o.vel.x = v/2
+     return true 
     end
-    if (npos.y > 13) then
-        a.pos.y = 13
-        a.vel.y = 0
-    elseif (npos.y < 1) then
-        a.pos.y = 1
-        a.vel.y = 0
+    
+    if (dy != 0 and abs(y) <
+        abs(a.pos.y-o.pos.y)) then
+     v=a.vel.y + o.vel.y
+     a.vel.y=v/2
+     o.vel.y=v/2
+     return true 
+    end
+    
+   end
+  end
+ end
+ return false
+end
+
+
+-- checks both walls and actors
+function solid_a(a, dx, dy)
+ if solid_area(a.pos.x+dx,a.pos.y+dy,
+    a.w,a.h) then
+    return true end
+ return solid_actor(a, dx, dy) 
+end
+
+function move_actor(a)
+    log('actor'..a.type..a.id)
+    if (a.control) a.control(a)
+
+    a.vel = vadd(a.vel, a.accel)
+
+    if not solid_a(a, a.vel.x, 0) then
+        a.pos.x += a.vel.x
+    else
+        a.vel.x *= -a.bounce
+        -- sfx(2)
+    end
+
+    if not solid_a(a, 0, a.vel.y) then
+        log('not solid y')
+        a.pos.y += a.vel.y
+    else
+        log('solid y')
+        a.vel.y *= -a.bounce
+        --sfx(2)
+    end
+ 
+    a.vel = vmul(a.vel, a.inertia)
+
+    a.frame += a.frameticks * (abs(a.vel.x) + abs(a.vel.y))
+    a.frame %= (a.frames+1)
+
+    if (a.vel.x < 0) then
+        a.facing = left
+    elseif (a.vel.x > 0) then
+        a.facing = right
     end
 end
 
@@ -887,9 +859,27 @@ end,
 addstate{
 name='escape',
 init=function()
-    proudpink = make_balloon(2, 6)
-    chase_target = proudpink
+    -- proudpink = make_balloon(2, 6)
+    -- proudpink.control = control_balloon
+    -- chase_target = proudpink
     girl = make_girl(3, 10)
+    girl = make_girl(10, 2)
+    setcollmap("0000000000000000\n"..
+               "0000000000000000\n"..
+               "0000000000000000\n"..
+               "0000000000000000\n"..
+               "0000000000000000\n"..
+               "0000000000000000\n"..
+               "0000000000000000\n"..
+               "0000000000000000\n"..
+               "0000000000000000\n"..
+               "0000000000000000\n"..
+               "0000000011111111\n"..
+               "0000000000000000\n"..
+               "0000000000000000\n"..
+               "0000000000000000\n"..
+               "0000000000000000\n"..
+               "1111111111111111")
 end,
 update=function()
 end,
@@ -1068,7 +1058,7 @@ f888888ff888888f6666666666666666499999944999999455555555555555550000000000000000
 00400400000000006666666666666666008008000000000055555555555555550000000000000000000000000000000000000000000000000000000000000000
 
 __gff__
-0000000000000000000000000000000000010101000000000000000000000000000000000100020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000010101000000000000000000000000000000000200040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __map__
 1010101010101010101010101010101000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
