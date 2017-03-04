@@ -54,13 +54,11 @@ function deferred()
     d.cbi = 1
     d.callbacks = {}
     d.than = function(cb)
-        log('d'..d.id..'.than')
         add(d.callbacks, cb)
         d.pump()
         return d
     end
     d.pump = function()
-        log('d'..d.id..'.pump '..d.cbi..'/'..#d.callbacks)
         if (not(d.has_result) or (type(d.result) == 'table' and d.result.than)) return
         for i=d.cbi,#d.callbacks do
             d.result = d.callbacks[i](d.result)
@@ -72,7 +70,6 @@ function deferred()
         end
     end
     d.resolve = function(result)
-        log('d'..d.id..'.result')
         d.has_result = true
         d.result = result
         d.pump()
@@ -378,20 +375,20 @@ end
 function move_actor(a)
     if (a.control) a.control(a)
 
+    -- accelerate
     a.vel = vadd(a.vel, a.accel)
-
-    -- actor:actor collisions
-    colliders = collide_actor(a)
 
     -- actor:wall collisions
     if (a.beholden_to_walls) collide_with_walls(a)
 
+    -- actor:actor collisions
+    colliders = collide_actor(a)
+
     -- move
     a.pos = vadd(a.pos, a.vel)
 
-    -- accelerate
+    -- decelerate
     a.vel = vmul(a.vel, a.inertia)
-
 
     a.frame += a.frameticks * (abs(a.vel.x) + abs(a.vel.y))
     a.frame %= (a.frames+1)
@@ -467,7 +464,6 @@ end
 --
 done_collisions = {}
 function collide_actor(a)
-    local ret = {}
     -- this actor's future position
     pos = a.pos
     vel = a.vel
@@ -493,90 +489,196 @@ function collide_actor(a)
             overlapx = a.w+o.w-abs(nd.x)
             overlapy = a.h+o.h-abs(nd.y)
 
-            local dobounce = function()
-                norm = vnorm(d)
-
-                a_dot = vdot(vel, norm)
-                o_dot = vdot(o.vel, norm)
-
-                totmass = (a.mass + o.mass)
-
-                optimizedp = (2 * (a_dot - o_dot)) / totmass
-
-                a.vel = vsub(a.vel, vmul(norm, optimizedp * o.mass))
-                o.vel = vadd(o.vel, vmul(norm, optimizedp * a.mass))
-            end
-
+            local deets = {
+                cur_distance=d,
+                fut_distance=nd,
+                bounce=false,
+            }
+            local collide = false;
             if (overlapx > 0 and overlapy > 0) then
-                
                 -- they are touching
-                add(ret, o)
-                if ((
-                a.type == 'balloon' and o.type == 'bird') or (a.type == 'bird' and o.type == 'balloon')) then
-                sfx(0)
-                end
-
-                if (vmag(nd) < vmag(d)) then
-                    -- they are getting closer
-                    dobounce()
-                end
-
+                collide = true
+                
+                -- they are getting closer
+                if (vmag(nd) < vmag(d)) deets.bounce=true
             else
+                -- are they moving too fast to collide in a single frame?
                 isection = vintersection(pos, vel, opos, o.vel)
-                if (not(isection)) then
-                    -- they are parallel
-                else
-                    -- they will or have intersected
-                    if (isection.apercent >= 0
-                        and isection.apercent <= 1
-                        and isection.bpercent >= 0
-                        and isection.bpercent <= 1) then
-                        -- they intersected
-                        dobounce()
-                    end
+                if (isection
+                    and isection.apercent >= 0
+                    and isection.apercent <= 1
+                    and isection.bpercent >= 0
+                    and isection.bpercent <= 1) then
+                    -- they intersected
+                    deets.bounce = true
+                    collide = true
                 end
-
+            end
+            if (collide) then
+                if (a.type <= o.type) then
+                    on_collide(a, o, deets)
+                else
+                    on_collide(o, a, deets)
+                end
             end
         end
         addtoset(done_collisions, pair_key)
     end
-    return ret
 end
+
+function on_collide(a, b, deets)
+    if (deets.bounce) bounce_actors(a, b, deets)
+end
+
+function bounce_actors(a, b, deets)
+    norm = vnorm(deets.cur_distance)
+
+    a_dot = vdot(a.vel, norm)
+    b_dot = vdot(b.vel, norm)
+
+    totmass = (a.mass + b.mass)
+
+    optimizedp = (2 * (a_dot - b_dot)) / totmass
+
+    a.vel = vsub(a.vel, vmul(norm, optimizedp * b.mass))
+    b.vel = vadd(b.vel, vmul(norm, optimizedp * a.mass))
+end
+
+
 -- check if a cell is solid
-function solid(x, y)
-    return fget(mget(x, y), 1)
+function is_solid(x, y)
+    if (x < 0
+        or x > map_w
+        or y < 0
+        or y > map_h) then
+        return true
+    end
+    return fget(getmaptile(x, y), 1)
+end
+-- this only works for w,h less than 1
+-- it checks the 4 corners
+function in_solid(x,y,w,h)
+    local xret = 0
+    local yret = 0
+    if is_solid(x-w, y-h) then
+        xret += -1
+        yret += -1
+    end
+    if is_solid(x+w, y-h) then
+        xret +=  1
+        yret += -1
+    end
+    if is_solid(x-w, y+h) then
+        xret += -1
+        yret +=  1
+    end
+    if is_solid(x+w, y+h) then
+        xret +=  1
+        yret +=  1
+    end
+    if (xret ~= 0 or yret ~= 0) then
+        return vector(xret, yret)
+    end
+    return false
 end
 -- check if an actor overlaps a solid spot
-function collide_with_tiles(a)
-    npos = vadd(a.pos, a.vel)
-    return solid(npos.x-a.w, npos.y-a.h) or
-        solid(npos.x+a.w, npos.y-a.h) or
-        solid(npos.x-a.w, npos.y+a.h) or
-        solid(npos.x+a.w, npos.y+a.h)
+-- this only works for actors less than one tile big
+function hit_tiles(a)
+    local npos = vadd(a.pos, a.vel)
+    local hit_direction = in_solid(npos.x, npos.y, a.w, a.h)
+    if (hit_direction) then
+        log('hit '..a.type..a.id)
+        log('x:'..npos.x..',y:'..npos.y..',w:'..a.w..',h:'..a.h)
+        log('dir.x:'..hit_direction.x..',dir.y:'..hit_direction.y)
+        opp = vmul(vnorm(hit_direction), -1)
+        -- while (in_solid(a.pos.x, a.pos.y, a.w, a.h)) do
+        --     a.pos = vadd(a.pos, opp)
+        -- end
+        -- a.vel = vadd(a.vel, vmul(opp, a.bounce))
+
+        --a.vel = vadd(a.vel, opp)
+    end
+    -- x
+    -- npos = vadd(a.pos, vector(a.vel.x, 0))
+    -- if (in_solid(npos.x, npos.y, a.w, a.h)
+    --     and not in_solid(a.pos.x, a.pos.y, a.w, a.h)) then
+    --     -- hit
+    --     a.vel.x *= -a.bounce
+    -- end
+
+    -- -- y
+    -- npos = vadd(a.pos, vector(0, a.vel.y))
+    -- if (in_solid(npos.x, npos.y, a.w, a.h)
+    --     and not in_solid(a.pos.x, a.pos.y, a.w, a.h)) then
+    --     -- hit
+    --     a.vel.y *= -a.bounce
+    -- end
+
+    -- backoff = vmul(vnorm(a.vel), -1)
+    -- while (in_solid(a.pos.x, a.pos.y, a.w, a.h)) do
+    --     vadd(a.pos, backoff)
+    -- end
 end
 
 function collide_with_walls(a)
     npos = vadd(a.pos, a.vel)
 
-    if collide_with_tiles(a)
-    if (fget(mget(npos.x, npos.y)) == 1)
+    -- if (fget(getmaptile(npos.x, npos.y)) == 1) then
+    -- end
+    hit_tiles(a)
 
-    -- Below is for hard-coded walls and floors
+    -- if collide_with_tiles(a)
+    -- if (fget(mget(npos.x, npos.y)) == 1)
 
-    if (npos.x > 15) then
-        a.pos.x = 15
+    -- the invisible walls
+    if (npos.x > (map_w)) then
+        a.pos.x = map_w
         a.vel.x = 0
-    elseif (npos.x < 1) then
-        a.pos.x = 1
+    elseif (npos.x < 0) then
+        a.pos.x = 0
         a.vel.x = 0
     end
-    if (npos.y > 13) then
-        a.pos.y = 13
+    if (npos.y > map_h) then
+        a.pos.y = map_h
         a.vel.y = 0
-    elseif (npos.y < 1) then
-        a.pos.y = 1
+    elseif (npos.y < 0) then
+        a.pos.y = 0
         a.vel.y = 0
     end
+end
+
+--------------------------------------------------
+-- mapping
+--------------------------------------------------
+map_src_x = 0
+map_src_y = 0
+map_w = 16
+map_h = 16
+-- choose a section of the map as the part
+-- to draw for collision purposes
+function choosemap(map_x, map_y, w, h)
+    map_src_x = map_x
+    map_src_y = map_y
+    map_w = w
+    map_h = h
+end
+-- get a map tile where x,y is a coordinate within
+-- the map chosen by choosemap
+function getmaptile(x, y)
+    return mget(map_src_x+x, map_src_y+y)
+end
+-- draw the chosen map
+function draw_chosen_map()
+    map(map_src_x, map_src_y, 0, 0, map_w, map_h)
+end
+-- move the camera to be looking at a specific actor
+function put_camera_on(actor)
+    -- the screen is 128 pixels wide, so the
+    -- 128 is to prevent from going to far right
+    -- 64 is to center the actor
+    cam_y = mid(0, actor.pos.y*8-64, map_h*8-128)
+    cam_x = mid(0, actor.pos.x*8-64, map_w*8-128)
+    camera(cam_x, cam_y)
 end
 
 --------------------------------------------------
@@ -645,7 +747,6 @@ function drawnarration()
     end
 end
 function narrate(s)
-    log('narrate'..s)
     nar_text = fit_to_lines(s)
     nar_i = 1
     nar_d = deferred()
@@ -690,7 +791,6 @@ function pump_timers()
     end
 end
 function wait(seconds)
-    log('wait'..seconds)
     local d = deferred()
     set_timeout(seconds, d.resolve)
     return d
@@ -887,7 +987,9 @@ end,
 addstate{
 name='escape',
 init=function()
+    choosemap(16,0,21,16)
     proudpink = make_balloon(2, 6)
+    proudpink.control = control_balloon
     chase_target = proudpink
     girl = make_girl(3, 10)
 end,
@@ -897,8 +999,9 @@ draw_background=function()
     -- sky
     rectfill(0, 0, 128, 128, blue)
 
-    -- background 1
-    map(16,0,0,0,16,16)
+    -- level
+    put_camera_on(proudpink)
+    draw_chosen_map()
 end,
 draw_foreground=function()
 end,
@@ -1068,7 +1171,7 @@ f888888ff888888f6666666666666666499999944999999455555555555555550000000000000000
 00400400000000006666666666666666008008000000000055555555555555550000000000000000000000000000000000000000000000000000000000000000
 
 __gff__
-0000000000000000000000000000000000010101000000000000000000000000000000000100020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000010101000000000000000000000000000000000200040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __map__
 1010101010101010101010101010101000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -1086,7 +1189,7 @@ __map__
 0000000000000000000000000000000000000000000000260025252500002600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000000000000000000000000000000000000000260025252500002600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000000000000000000000000000000000000000260025252500002600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000000024242424242424242424242424242424000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000024242424242424242424242424242424242424242400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
