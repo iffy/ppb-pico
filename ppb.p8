@@ -29,6 +29,10 @@ function log(x)
     printh(x, "pico.log")
 end
 
+function ceil(x)
+    return flr(x)+1
+end
+
 --
 -- http://stackoverflow.com/questions/2282444/how-to-check-if-a-table-contains-an-element-in-lua
 --
@@ -111,8 +115,8 @@ function make_actor(tx, ty, type)
     -- accel
     a.accel = vector(0, 0)
     -- hitbox
-    a.w = 0.4
-    a.h = 0.4
+    a.w = 0.31
+    a.h = 0.31
     a.type = type
     a.collides_with = {}
     a.beholden_to_walls = true
@@ -218,7 +222,7 @@ function make_girl(tx, ty)
     girl.control = walk_around
     girl.shirt_color = red
     girl.accel.y = 0.3
-    girl.bounce = 0
+    girl.bounce = 0.1
     return girl
 end
 function walk_around(girl)
@@ -373,6 +377,8 @@ function draw_actor(a)
         a)
 end
 function move_actor(a)
+    a.should_advance = {x=true,y=true}
+
     if (a.control) a.control(a)
 
     -- accelerate
@@ -385,7 +391,8 @@ function move_actor(a)
     colliders = collide_actor(a)
 
     -- move
-    a.pos = vadd(a.pos, a.vel)
+    if (a.should_advance.x) a.pos.x += a.vel.x
+    if (a.should_advance.y) a.pos.y += a.vel.y
 
     -- decelerate
     a.vel = vmul(a.vel, a.inertia)
@@ -585,19 +592,86 @@ end
 -- this only works for actors less than one tile big
 function hit_tiles(a)
     local npos = vadd(a.pos, a.vel)
-    local hit_direction = in_solid(npos.x, npos.y, a.w, a.h)
-    if (hit_direction) then
-        log('hit '..a.type..a.id)
-        log('x:'..npos.x..',y:'..npos.y..',w:'..a.w..',h:'..a.h)
-        log('dir.x:'..hit_direction.x..',dir.y:'..hit_direction.y)
-        opp = vmul(vnorm(hit_direction), -1)
-        -- while (in_solid(a.pos.x, a.pos.y, a.w, a.h)) do
-        --     a.pos = vadd(a.pos, opp)
-        -- end
-        -- a.vel = vadd(a.vel, vmul(opp, a.bounce))
 
-        --a.vel = vadd(a.vel, opp)
+    if not in_solid(npos.x, a.pos.y, a.w, a.h) then
+
+    else
+        if (a.vel.x > 0) then
+            a.pos.x = ceil(npos.x) - a.w
+        elseif (a.vel.x < 0) then
+            a.pos.x = flr(npos.x) + a.w
+        end
+        a.vel.x *= -a.bounce
     end
+
+    if not in_solid(a.pos.x, npos.y, a.w, a.h) then
+    else
+        if (a.vel.y > 0) then
+            a.pos.y = ceil(npos.y) - a.h
+        elseif (a.vel.y < 0) then
+            a.pos.y = flr(npos.y) + a.h
+        end
+        a.vel.y *= -a.bounce
+    end
+
+    return
+
+    -- local npos = vadd(a.pos, a.vel)
+    -- local hit_direction = in_solid(npos.x, npos.y, a.w, a.h)
+    -- if (hit_direction) then
+    --     log('hit '..a.type..a.id)
+    --     log('x:'..npos.x..',y:'..npos.y..',w:'..a.w..',h:'..a.h)
+    --     log('dir.x:'..hit_direction.x..',dir.y:'..hit_direction.y)
+    --     norm = vnorm(hit_direction)
+    --     opp = vmul(norm, -1)
+    --     mag = vdot(a.vel, norm)
+    --     a.vel = vadd(a.vel, vmul(opp, mag))
+
+    --     -- the following doesn't work if the actor move beyond
+    --     -- one square at a time
+
+    --     -- also, the balloon gets shoved down when hugging the side
+    --     -- of walls
+
+    --     -- y
+    --     if (abs(a.vel.y) > 0) then
+    --         if (hit_direction.y > 0) then
+    --             -- colliding with floor
+    --             log('floor')
+    --             a.pos.y = ceil(npos.y) - a.h
+    --             a.vel.y = 0
+    --         elseif (hit_direction.y < 0) then
+    --             -- colliding with ceiling
+    --             log('ceiling')
+    --             a.pos.y = flr(npos.y) + a.h
+    --             a.vel.y = 0
+    --         end
+    --     end
+
+    --     -- x
+    --     if (abs(a.vel.x) > 0) then
+    --         if (hit_direction.x > 0) then
+    --             -- colliding with wall to right
+    --             log('rightwall')
+    --             a.pos.x = ceil(npos.x) - a.w
+    --             a.vel.x = 0
+    --         elseif (hit_direction.x < 0) then
+    --             -- colliding with wall to left
+    --             log('leftwall')
+    --             a.pos.x = flr(npos.x) + a.w
+    --             a.vel.x = 0
+    --         end
+    --     end
+
+    --     -- while (in_solid(a.pos.x, a.pos.y, a.w, a.h)) do
+    --     --     a.pos = vadd(a.pos, opp)
+    --     -- end
+    --     -- a.vel = vadd(a.vel, vmul(opp, a.bounce))
+
+    --     --a.vel = vadd(a.vel, opp)
+    -- end
+    
+
     -- x
     -- npos = vadd(a.pos, vector(a.vel.x, 0))
     -- if (in_solid(npos.x, npos.y, a.w, a.h)
@@ -625,7 +699,7 @@ function collide_with_walls(a)
 
     -- if (fget(getmaptile(npos.x, npos.y)) == 1) then
     -- end
-    hit_tiles(a)
+    -- if hit_tiles(a) then a.should_advance = false
 
     -- if collide_with_tiles(a)
     -- if (fget(mget(npos.x, npos.y)) == 1)
@@ -634,16 +708,43 @@ function collide_with_walls(a)
     if (npos.x > (map_w)) then
         a.pos.x = map_w
         a.vel.x = 0
+        a.should_advance.x = false
     elseif (npos.x < 0) then
         a.pos.x = 0
         a.vel.x = 0
+        a.should_advance.x = false
     end
     if (npos.y > map_h) then
         a.pos.y = map_h
         a.vel.y = 0
+        a.should_advance.y = false
     elseif (npos.y < 0) then
         a.pos.y = 0
         a.vel.y = 0
+        a.should_advance.y = false
+    end
+
+    if not in_solid(npos.x, a.pos.y, a.w, a.h) then
+
+    else
+        -- if (a.vel.x > 0) then
+        --     a.pos.x = ceil(npos.x) - a.w
+        -- elseif (a.vel.x < 0) then
+        --     a.pos.x = flr(npos.x) + a.w
+        -- end
+        a.should_advance.x = false
+        a.vel.x *= -a.bounce
+    end
+
+    if not in_solid(a.pos.x, npos.y, a.w, a.h) then
+    else
+        -- if (a.vel.y > 0) then
+        --     a.pos.y = ceil(npos.y) - a.h
+        -- elseif (a.vel.y < 0) then
+        --     a.pos.y = flr(npos.y) + a.h
+        -- end
+        a.should_advance.y = false
+        a.vel.y *= -a.bounce
     end
 end
 
@@ -1181,8 +1282,8 @@ __map__
 0000004041000000000000000000000000000000000000000000000000002600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00404141510000002b2b2b2b0000000000000000000000000000000000002600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000515151002727282828282a00000000000000000000000000000000002600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000051515100272729292929292a000000000000000000000000000000002600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000000000000000000000000000000000000000260000000000002600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000051515100272729292929292a000000000000000000002400000024002600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000262400000024002600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000000000000000000000000000000000000000262424242424002600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000000000000000000000000000000000000000260025252500002600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000000000000000000000000000000000000000260025252500002600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
