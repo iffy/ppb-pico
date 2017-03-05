@@ -213,40 +213,58 @@ function draw_girl(px, py, girl)
     local flip_x = false
     if (girl.facing == left) flip_x = true
     pal(red, girl.shirt_color)
-    spr(7+girl.frame, px, py, 1, 1, flip_x)
+    local frame = 7 + girl.frame
+    if (girl.vel.y < 0) then
+        -- jumping or falling
+        frame = 12
+    end
+    if (abs(girl.vel.x) >= 0.05 and abs(girl.vel.y) >= 0.4) then
+        frame = 27
+    end
+    spr(frame, px, py, 1, 1, flip_x)
     pal()
+    -- print('v:('..girl.vel.x..','..girl.vel.y..')',
+    --     girl.pos.x*8, girl.pos.y*8, white)
 end
 function make_girl(tx, ty)
     girl = make_actor(tx, ty, 'girl')
     girl.draw = draw_girl
-    girl.control = walk_around
+    girl.control = ai_walk_around
     girl.shirt_color = red
-    girl.accel.y = 0.3
-    girl.bounce = 0.1
+    girl.accel.y = 0.2
+    girl.bounce = 0
     return girl
 end
-function walk_around(girl)
-    local r = rnd(10)
-    if (r <= 1) then
-        -- change what you're doing
-        r = rnd(10)
-        if (girl.accel.x != 0) then
-            -- she's moving
-            girl.accel.x = 0
-        else
-            -- she's holding still
-            if (r <= 5) then
-                girl.accel.x = rnd(0.15)
+function ai_walk_around(girl)
+    if (girl.vel.y == 0) then
+        local r = rnd(10)
+        if (r <= 1) then
+            -- change what you're doing
+            r = rnd(7)
+            if (girl.accel.x != 0) then
+                -- she's moving
+                girl.accel.x = 0
             else
-                girl.accel.x = -rnd(0.15)
+                -- she's holding still
+                if (r <= 5) then
+                    girl.accel.x = rnd(0.15)
+                else
+                    girl.accel.x = -rnd(0.15)
+                end
             end
         end
+    end
+    local r2 = rnd(6)
+    if (r2 <= 1 and girl.vel.y == 0) then
+        -- jump
+        girl.vel.y -= 1.5
+        girl.accel.x = 0
     end
 end
 chase_target = nil
 function chase_balloon(girl)
     if (not(chase_target)) then
-        walk_around(girl)
+        ai_walk_around(girl)
     end
 end
 
@@ -537,6 +555,7 @@ function on_collide(a, b, deets)
     if (deets.bounce) bounce_actors(a, b, deets)
 end
 
+-- bounce two actors that have collided
 function bounce_actors(a, b, deets)
     norm = vnorm(deets.cur_distance)
 
@@ -549,6 +568,8 @@ function bounce_actors(a, b, deets)
 
     a.vel = vsub(a.vel, vmul(norm, optimizedp * b.mass))
     b.vel = vadd(b.vel, vmul(norm, optimizedp * a.mass))
+
+
 end
 
 
@@ -588,161 +609,21 @@ function in_solid(x,y,w,h)
     end
     return false
 end
--- check if an actor overlaps a solid spot
--- this only works for actors less than one tile big
-function hit_tiles(a)
-    local npos = vadd(a.pos, a.vel)
 
-    if not in_solid(npos.x, a.pos.y, a.w, a.h) then
-
-    else
-        if (a.vel.x > 0) then
-            a.pos.x = ceil(npos.x) - a.w
-        elseif (a.vel.x < 0) then
-            a.pos.x = flr(npos.x) + a.w
-        end
-        a.vel.x *= -a.bounce
-    end
-
-    if not in_solid(a.pos.x, npos.y, a.w, a.h) then
-    else
-        if (a.vel.y > 0) then
-            a.pos.y = ceil(npos.y) - a.h
-        elseif (a.vel.y < 0) then
-            a.pos.y = flr(npos.y) + a.h
-        end
-        a.vel.y *= -a.bounce
-    end
-
-    return
-
-    -- local npos = vadd(a.pos, a.vel)
-    -- local hit_direction = in_solid(npos.x, npos.y, a.w, a.h)
-    -- if (hit_direction) then
-    --     log('hit '..a.type..a.id)
-    --     log('x:'..npos.x..',y:'..npos.y..',w:'..a.w..',h:'..a.h)
-    --     log('dir.x:'..hit_direction.x..',dir.y:'..hit_direction.y)
-    --     norm = vnorm(hit_direction)
-    --     opp = vmul(norm, -1)
-    --     mag = vdot(a.vel, norm)
-    --     a.vel = vadd(a.vel, vmul(opp, mag))
-
-    --     -- the following doesn't work if the actor move beyond
-    --     -- one square at a time
-
-    --     -- also, the balloon gets shoved down when hugging the side
-    --     -- of walls
-
-    --     -- y
-    --     if (abs(a.vel.y) > 0) then
-    --         if (hit_direction.y > 0) then
-    --             -- colliding with floor
-    --             log('floor')
-    --             a.pos.y = ceil(npos.y) - a.h
-    --             a.vel.y = 0
-    --         elseif (hit_direction.y < 0) then
-    --             -- colliding with ceiling
-    --             log('ceiling')
-    --             a.pos.y = flr(npos.y) + a.h
-    --             a.vel.y = 0
-    --         end
-    --     end
-
-    --     -- x
-    --     if (abs(a.vel.x) > 0) then
-    --         if (hit_direction.x > 0) then
-    --             -- colliding with wall to right
-    --             log('rightwall')
-    --             a.pos.x = ceil(npos.x) - a.w
-    --             a.vel.x = 0
-    --         elseif (hit_direction.x < 0) then
-    --             -- colliding with wall to left
-    --             log('leftwall')
-    --             a.pos.x = flr(npos.x) + a.w
-    --             a.vel.x = 0
-    --         end
-    --     end
-
-    --     -- while (in_solid(a.pos.x, a.pos.y, a.w, a.h)) do
-    --     --     a.pos = vadd(a.pos, opp)
-    --     -- end
-    --     -- a.vel = vadd(a.vel, vmul(opp, a.bounce))
-
-    --     --a.vel = vadd(a.vel, opp)
-    -- end
-    
-
-    -- x
-    -- npos = vadd(a.pos, vector(a.vel.x, 0))
-    -- if (in_solid(npos.x, npos.y, a.w, a.h)
-    --     and not in_solid(a.pos.x, a.pos.y, a.w, a.h)) then
-    --     -- hit
-    --     a.vel.x *= -a.bounce
-    -- end
-
-    -- -- y
-    -- npos = vadd(a.pos, vector(0, a.vel.y))
-    -- if (in_solid(npos.x, npos.y, a.w, a.h)
-    --     and not in_solid(a.pos.x, a.pos.y, a.w, a.h)) then
-    --     -- hit
-    --     a.vel.y *= -a.bounce
-    -- end
-
-    -- backoff = vmul(vnorm(a.vel), -1)
-    -- while (in_solid(a.pos.x, a.pos.y, a.w, a.h)) do
-    --     vadd(a.pos, backoff)
-    -- end
-end
-
+-- BUG: fast-moving balloons can get stuck inside solid blocks
 function collide_with_walls(a)
     npos = vadd(a.pos, a.vel)
 
-    -- if (fget(getmaptile(npos.x, npos.y)) == 1) then
-    -- end
-    -- if hit_tiles(a) then a.should_advance = false
-
-    -- if collide_with_tiles(a)
-    -- if (fget(mget(npos.x, npos.y)) == 1)
-
-    -- the invisible walls
-    if (npos.x > (map_w)) then
-        a.pos.x = map_w
-        a.vel.x = 0
-        a.should_advance.x = false
-    elseif (npos.x < 0) then
-        a.pos.x = 0
-        a.vel.x = 0
-        a.should_advance.x = false
-    end
-    if (npos.y > map_h) then
-        a.pos.y = map_h
-        a.vel.y = 0
-        a.should_advance.y = false
-    elseif (npos.y < 0) then
-        a.pos.y = 0
-        a.vel.y = 0
-        a.should_advance.y = false
-    end
-
-    if not in_solid(npos.x, a.pos.y, a.w, a.h) then
-
-    else
-        -- if (a.vel.x > 0) then
-        --     a.pos.x = ceil(npos.x) - a.w
-        -- elseif (a.vel.x < 0) then
-        --     a.pos.x = flr(npos.x) + a.w
-        -- end
+    if (npos.x > (map_w)
+        or npos.x < 0
+        or in_solid(npos.x, a.pos.y, a.w, a.h)) then
         a.should_advance.x = false
         a.vel.x *= -a.bounce
     end
 
-    if not in_solid(a.pos.x, npos.y, a.w, a.h) then
-    else
-        -- if (a.vel.y > 0) then
-        --     a.pos.y = ceil(npos.y) - a.h
-        -- elseif (a.vel.y < 0) then
-        --     a.pos.y = flr(npos.y) + a.h
-        -- end
+    if (npos.y > map_h
+        or npos.y < 0
+        or in_solid(a.pos.x, npos.y, a.w, a.h)) then
         a.should_advance.y = false
         a.vel.y *= -a.bounce
     end
@@ -1150,13 +1031,13 @@ f999999f0eeee7e00007000000007000000700000007777770000000044ffff0044ffff0081ff100
 00aaaa000eeeeee00007000000000700007000000f777777f7770000000888800008888004c8870004c88c0004788c000088880004fff0000000000000000000
 00a00a0000eeee00000700000000007007000000fffff77777777000000888800000880040788c0440c8870440c88c0400888800007700000000000000000000
 00800800000ee000000000000000000000000000ffffffff7777770000040040000044004f8888f44f8888f44f8888f400400400011110000000000000000000
-00000000bbbbbbbbbbbbbbbb333333330000000000000000000000000000000000000000004444f00f4444000048444400000000011110000111100000000000
-000000003bb3bbbb3bbbb3333333333300000000000000000000333000000000000000000f4444800844ff0f440044ff0000000001111f0001111f0000000000
-000000003333333333333333333333330044444444444400000333333000000000000300084884800888f18000004ff100000000011110000111100000000000
-000000003333333333333333333333330005000000005000003333233330000000a0030008844880084fff8048888fff00000000077770000777700000000000
-666666563333333333333333333333330044444444444400033333333230033000b0300000848800044888000888880000000444011110000111100000000000
-6666656633333333333333333333333300050000000050000323333333333330000b300a00848800048888000888088f044844ff010010000011000000000000
-6666566633333333333333333333333304444444444444403333323333333233000b30b000880400004088004800000048884ff1040040000044000000000000
+00000000bbbbbbbbbbbbbbbb333333330000000000000000000000000000000000000000004444f00f4444000000000000000000011110000111100000000000
+000000003bb3bbbb3bbbb3333333333300000000000000000000333000000000000000000f4444800844ff0f044044440000000001111f0001111f0000000000
+000000003333333333333333333333330044444444444400000333333000000000000300084884800888f180400844ff00000000011110000111100000000000
+000000003333333333333333333333330005000000005000003333233330000000a0030008844880084fff8000004ff100000000077770000777700000000000
+666666563333333333333333333333330044444444444400033333333230033000b03000008488000448880048888fff00000444011110000111100000000000
+6666656633333333333333333333333300050000000050000323333333333330000b300a008488000488880008888800044844ff010010000011000000000000
+6666566633333333333333333333333304444444444444403333323333333233000b30b000880400004088004888808f48884ff1040040000044000000000000
 6665666633333333333333333333333300050000000050003333333333333333000b3b0000400000000004000000000048888fff044044000044400000000000
 00000000000ee000000e000000000000333333331111111166666666000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000ee7e0000e0000000000000333333331111111166666666000000000000000000000000000000000000000000000000000000000000000000000000
