@@ -121,6 +121,7 @@ function make_actor(tx, ty, type)
     a.collides_with = {}
     a.beholden_to_walls = true
     a.on_collide = function(other) end
+    a.on_land = false
 
     a.anchorx = 0
     a.anchory = 0
@@ -214,17 +215,20 @@ function draw_girl(px, py, girl)
     if (girl.facing == left) flip_x = true
     pal(red, girl.shirt_color)
     local frame = 7 + girl.frame
-    if (girl.vel.y < 0) then
+    if not(girl.on_land) then
         -- jumping or falling
         frame = 12
+        if (abs(girl.vel.x) >= 0.05) then
+            -- going sideways fast
+            frame = 27
+        end
     end
-    if (abs(girl.vel.x) >= 0.05 and abs(girl.vel.y) >= 0.4) then
-        frame = 27
-    end
+    
     spr(frame, px, py, 1, 1, flip_x)
     pal()
-    -- print('v:('..girl.vel.x..','..girl.vel.y..')',
-    --     girl.pos.x*8, girl.pos.y*8, white)
+    print('v:('..girl.vel.x..','..girl.vel.y..')',
+        girl.pos.x*8, girl.pos.y*8, white)
+    if (girl.on_land) print('land', girl.pos.x*8, (girl.pos.y+0.5)*8)
 end
 function make_girl(tx, ty)
     girl = make_actor(tx, ty, 'girl')
@@ -236,8 +240,8 @@ function make_girl(tx, ty)
     return girl
 end
 function ai_walk_around(girl)
-    if (girl.vel.y == 0) then
-        local r = rnd(10)
+    if (girl.on_land) then
+        local r = rnd(20)
         if (r <= 1) then
             -- change what you're doing
             r = rnd(7)
@@ -247,14 +251,14 @@ function ai_walk_around(girl)
             else
                 -- she's holding still
                 if (r <= 5) then
-                    girl.accel.x = rnd(0.15)
+                    girl.accel.x = rnd(0.3)
                 else
-                    girl.accel.x = -rnd(0.15)
+                    girl.accel.x = -rnd(0.3)
                 end
             end
         end
     end
-    local r2 = rnd(6)
+    local r2 = rnd(20)
     if (r2 <= 1 and girl.vel.y == 0) then
         -- jump
         girl.vel.y -= 1.5
@@ -402,11 +406,11 @@ function move_actor(a)
     -- accelerate
     a.vel = vadd(a.vel, a.accel)
 
-    -- actor:wall collisions
-    if (a.beholden_to_walls) collide_with_walls(a)
-
     -- actor:actor collisions
     colliders = collide_actor(a)
+
+    -- actor:wall collisions
+    if (a.beholden_to_walls) collide_with_walls(a)
 
     -- move
     if (a.should_advance.x) a.pos.x += a.vel.x
@@ -586,46 +590,57 @@ end
 -- this only works for w,h less than 1
 -- it checks the 4 corners
 function in_solid(x,y,w,h)
-    local xret = 0
-    local yret = 0
-    if is_solid(x-w, y-h) then
-        xret += -1
-        yret += -1
-    end
-    if is_solid(x+w, y-h) then
-        xret +=  1
-        yret += -1
-    end
-    if is_solid(x-w, y+h) then
-        xret += -1
-        yret +=  1
-    end
-    if is_solid(x+w, y+h) then
-        xret +=  1
-        yret +=  1
-    end
-    if (xret ~= 0 or yret ~= 0) then
-        return vector(xret, yret)
-    end
-    return false
+    return is_solid(x-w, y-h) 
+        or is_solid(x+w, y-h)
+        or is_solid(x-w, y+h)
+        or is_solid(x+w, y+h)
 end
 
--- BUG: fast-moving balloons can get stuck inside solid blocks
+function snap(a, direction)
+    while (not(in_solid(a.pos.x, a.pos.y, a.w, a.h))) do
+        a.pos = vadd(a.pos, direction)
+    end
+end
+
+-- BUG: fast-moving balloons can shoot through single-width solid things
+BOUNCE_THRESH = 0.01
 function collide_with_walls(a)
     npos = vadd(a.pos, a.vel)
+    a.on_land = false
 
-    if (npos.x > (map_w)
-        or npos.x < 0
-        or in_solid(npos.x, a.pos.y, a.w, a.h)) then
+    if (in_solid(npos.x, a.pos.y, a.w, 0)) then
         a.should_advance.x = false
         a.vel.x *= -a.bounce
     end
 
-    if (npos.y > map_h
-        or npos.y < 0
-        or in_solid(a.pos.x, npos.y, a.w, a.h)) then
-        a.should_advance.y = false
-        a.vel.y *= -a.bounce
+    if (a.vel.y < 0) then
+        -- going up
+        if (in_solid(a.pos.x, npos.y, a.w, a.h)) then
+            
+            if (a.bounce > 0 and abs(a.vel.y) > BOUNCE_THRESH) then
+                -- bounce off ceiling
+                a.should_advance.y = false
+                a.vel.y *= -a.bounce
+            else
+                -- snap to ceiling
+                snap(a, vector(0, -0.01))
+                a.vel.y = 0
+            end
+        end
+    else
+        -- going down
+        if (in_solid(a.pos.x, npos.y, a.w, a.h)) then
+            if (a.bounce > 0 and abs(a.vel.y) > BOUNCE_THRESH) then
+                -- bounce off ground
+                a.should_advance.y = false
+                a.vel.y *= -a.bounce
+            else
+                -- snap to ground
+                snap(a, vector(0, 0.01))
+                a.on_land = true
+                a.vel.y = 0
+            end
+        end
     end
 end
 
