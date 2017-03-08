@@ -25,6 +25,9 @@ indigo=13
 pink=14
 peach=15
 
+solid_flag = 1
+ladder_flag = 2
+
 function log(x)
     printh(x, "pico.log")
 end
@@ -238,13 +241,21 @@ function make_girl(tx, ty)
     girl.draw = draw_girl
     girl.control = ai_walk_around
     girl.shirt_color = red
-    girl.accel.y = 0.15
+    girl.accel.y = 0.10
     girl.bounce = 0
     girl.land_inertia = 0.3
     girl.air_inertia = 0.95
     return girl
 end
 function ai_walk_around(girl)
+    -- look for a ladder
+    ladder = nearest_ladder(girl)
+    if (ladder == 0) then
+        -- climb the ladder
+        girl.shirt_color = pink
+    else
+        girl.shirt_color = blue
+    end
     if (girl.on_land) then
         local r = rnd(20)
         if (r <= 1) then
@@ -602,7 +613,7 @@ function is_solid(x, y)
         or y > map_h) then
         return true
     end
-    return fget(getmaptile(x, y), 1)
+    return fget(getmaptile(x, y), solid_flag)
 end
 -- this only works for w,h less than 1
 -- it checks the 4 corners
@@ -620,12 +631,13 @@ function snap(a, direction)
 end
 
 -- bug: fast-moving balloons can shoot through single-width solid things
+-- bug: diagonally-moving balloons can get stuck in walls
 bounce_thresh = 0.01
 function collide_with_walls(a)
     npos = vadd(a.pos, a.vel)
     a.on_land = false
 
-    if (in_solid(npos.x, a.pos.y, a.w, 0)) then
+    if (in_solid(npos.x, a.pos.y, a.w, a.h/2)) then
         a.should_advance.x = false
         a.vel.x *= -a.bounce
     end
@@ -659,6 +671,23 @@ function collide_with_walls(a)
             end
         end
     end
+end
+
+--------------------------------------------------
+-- AI
+--------------------------------------------------
+-- return the direction to the nearest ladder
+-- within a few blocks
+-- 1 = to the right
+-- -1 = to the left
+-- 0 = you're on a ladder
+function nearest_ladder(a)
+    if (fget(getmaptile(a.pos.x, a.pos.y), ladder_flag)) return 0
+    for i = 0, 4 do
+        if (fget(getmaptile(a.pos.x + i, a.pos.y), ladder_flag)) return 1
+        if (fget(getmaptile(a.pos.x - i, a.pos.y), ladder_flag)) return -1
+    end
+    return nil
 end
 
 --------------------------------------------------
