@@ -28,8 +28,24 @@ peach=15
 solid_flag = 1
 ladder_flag = 2
 
-function log(x)
-    printh(x, "pico.log")
+function log(...)
+    local args = {...}
+    local s = ''
+    for i=1,#args do
+        s = s..repr(args[i])..' '
+    end
+    printh(s, "pico.log")
+end
+
+function repr(x)
+    if (type(x) == 'boolean') then
+        if (x) return 'true'
+        return 'false'
+    elseif (type(x) == 'table') then
+        return '<table>'
+    else
+        return ''..x
+    end
 end
 
 function ceil(x)
@@ -109,7 +125,7 @@ nextid = 1
 -- x,y means center of the actor in map tiles (not pixels)
 function make_actor(tx, ty, type)
     a = {}
-    a.id = nextid
+    a.id = ''..nextid
     nextid += 1
     -- posish
     a.pos = vector(tx, ty)
@@ -124,7 +140,8 @@ function make_actor(tx, ty, type)
     a.collides_with = {}
     a.beholden_to_walls = true
     a.on_collide = function(other) end
-    a.on_land = false
+    a.standing = false
+    a.climber = false
 
     a.anchorx = 0
     a.anchory = 0
@@ -216,12 +233,13 @@ end
 --------------------------------------------------
 -- girl
 --------------------------------------------------
+gravity = 0.10
 function draw_girl(px, py, girl)
     local flip_x = false
     if (girl.facing == left) flip_x = true
     pal(red, girl.shirt_color)
     local frame = 7 + girl.frame
-    if not(girl.on_land) then
+    if not(girl.standing) then
         -- jumping or falling
         frame = 12
         if (abs(girl.vel.x) >= 0.05) then
@@ -234,56 +252,73 @@ function draw_girl(px, py, girl)
     pal()
     -- print('v:('..girl.vel.x..','..girl.vel.y..')',
     --     girl.pos.x*8, girl.pos.y*8, white)
-    -- if (girl.on_land) print('land', girl.pos.x*8, (girl.pos.y+0.5)*8)
+    -- if (girl.standing) print('land', girl.pos.x*8, (girl.pos.y+0.5)*8)
 end
 function make_girl(tx, ty)
     girl = make_actor(tx, ty, 'girl')
     girl.draw = draw_girl
     girl.control = ai_walk_around
     girl.shirt_color = red
-    girl.accel.y = 0.10
+    girl.accel.y = gravity
     girl.bounce = 0
     girl.land_inertia = 0.3
     girl.air_inertia = 0.95
+
+    girl.climber = {
+        climbing=false,
+    }
     return girl
 end
 function ai_walk_around(girl)
-    -- look for a ladder
-    ladder = nearest_ladder(girl)
-    if (ladder == 0) then
-        -- climb the ladder
-        girl.shirt_color = pink
+    if (girl.climber.climbing) then
+        -- climbing
+        girl.accel.y = 0
     else
-        girl.shirt_color = blue
-    end
-    if (girl.on_land) then
-        local r = rnd(20)
-        if (r <= 1) then
-            -- change what you're doing
-            r = rnd(7)
-            if (girl.accel.x != 0) then
-                -- she's moving
-                girl.accel.x = 0
-            else
-                -- she's holding still
-                if (r <= 5) then
-                    girl.accel.x = rnd(0.3)
+        -- not climbing
+        girl.accel.y = gravity
+
+        -- look for a ladder
+        ladder = nearest_ladder(girl)
+        if (ladder == 0) then
+            -- on a ladder
+            girl.shirt_color = orange
+            girl.climber.climbing = true
+        else
+            girl.shirt_color = purple
+        end
+
+        -- walk around
+        if (girl.standing) then
+            local r = rnd(20)
+            if (r <= 1) then
+                -- change what you're doing
+                r = rnd(7)
+                if (girl.accel.x != 0) then
+                    -- she's moving
+                    girl.accel.x = 0
                 else
-                    girl.accel.x = -rnd(0.3)
+                    -- she's holding still
+                    if (r <= 5) then
+                        girl.accel.x = rnd(0.3)
+                    else
+                        girl.accel.x = -rnd(0.3)
+                    end
                 end
             end
         end
-    end
-    local r2 = rnd(20)
-    if (r2 <= 1 and girl.vel.y == 0) then
+
         -- jump
-        girl.vel.y -= 1
-        if (rnd(10) < 5) then
-            girl.vel.x += 0.7
-        else
-            girl.vel.x -= 0.7
+        local r2 = rnd(20)
+        if (r2 <= 1 and girl.vel.y == 0) then
+            -- jump
+            girl.vel.y -= 1
+            if (rnd(10) < 5) then
+                girl.vel.x += 0.7
+            else
+                girl.vel.x -= 0.7
+            end
+            girl.accel.x = 0
         end
-        girl.accel.x = 0
     end
 end
 chase_target = nil
@@ -440,7 +475,7 @@ function move_actor(a)
     if (a.should_advance.y) a.pos.y += a.vel.y
 
     -- decelerate
-    if (a.on_land) then
+    if (a.standing) then
         a.inertia = a.land_inertia
     else
         a.inertia = a.air_inertia
@@ -635,7 +670,7 @@ end
 bounce_thresh = 0.01
 function collide_with_walls(a)
     npos = vadd(a.pos, a.vel)
-    a.on_land = false
+    a.standing = false
 
     if (in_solid(npos.x, a.pos.y, a.w, a.h/2)) then
         a.should_advance.x = false
@@ -666,7 +701,7 @@ function collide_with_walls(a)
             else
                 -- snap to ground
                 snap(a, vector(0, 0.01))
-                a.on_land = true
+                a.standing = true
                 a.vel.y = 0
             end
         end
@@ -674,8 +709,29 @@ function collide_with_walls(a)
 end
 
 --------------------------------------------------
--- AI
+-- AI bot npc
 --------------------------------------------------
+-- return true pct% of the time
+--   e.g. sometimes(10) will return true 10% of the time
+function sometimes(pct)
+    return rnd(100) < pct
+end
+function choose(...)
+    local args = {...}
+    return args[flr(rnd(#args))+1]
+end
+
+running_cooldowns = {}
+function start_cooldown(key, seconds)
+    addtoset(running_cooldowns, key)
+    set_timeout(seconds, function()
+        removefromset(running_cooldowns, key)
+    end)
+end
+function cooling_off(key)
+    return setcontains(running_cooldowns, key)
+end
+
 -- return the direction to the nearest ladder
 -- within a few blocks
 -- 1 = to the right
@@ -689,6 +745,59 @@ function nearest_ladder(a)
     end
     return nil
 end
+
+function make_fsm(handlers)
+    local state = 'init'
+    local change_state = function(new_state)
+        if (not(new_state)) return
+        -- run state teardown handler
+        local off_handler = handlers['off_'..state]
+        if (off_handler) off_handler()
+        -- run state init handler
+        local on_handler = handlers['on_'..new_state]
+        if (on_handler) on_handler()
+        state = new_state
+    end
+    local tick = function()
+        if (handlers.pre_tick) change_state(handlers.pre_tick())
+        change_state(handlers[state]())
+    end
+    return tick
+end
+
+function fsm_chaser(a)
+    return make_fsm{
+        pre_tick=function()
+        end,
+
+        init=function()
+            if (a.standing) return 'idle'
+            return 'idle'
+        end,
+
+        -- idle
+        on_idle=function()
+            a.accel.x = 0
+            start_cooldown(a, 2)
+        end,
+        idle=function()
+            if (cooling_off(a)) return
+            if (a.standing and sometimes(20)) return 'walking'
+        end,
+
+        -- walking
+        on_walking=function()
+            a.accel.x = choose(0.15, -0.15)
+            start_cooldown(a, 1)
+        end,
+        walking=function()
+            if (cooling_off(a)) return
+            return 'idle'
+        end
+    }
+end
+
+
 
 --------------------------------------------------
 -- mapping
@@ -1036,7 +1145,11 @@ init=function()
     proudpink = make_balloon(2, 6)
     proudpink.control = control_balloon
     chase_target = proudpink
-    girl = make_girl(3, 10)
+    girl1 = make_girl(3, 10)
+    girl1.control = fsm_chaser(girl1)
+
+    girl2 = make_girl(5, 10)
+    girl2.control = fsm_chaser(girl2)
 end,
 update=function()
 end,
