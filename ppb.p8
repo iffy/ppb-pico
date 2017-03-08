@@ -133,6 +133,8 @@ function make_actor(tx, ty, type)
     a.frameticks = 4
 
     a.inertia = 0.6
+    a.air_inertia = 0.6
+    a.land_inertia = 0.6
     a.bounce = 0.4
     a.mass = 1
     a.sprite = 1
@@ -176,7 +178,8 @@ function make_balloon(tx, ty)
     balloon.h = 0.3
     addtoset(balloon.collides_with, 'girl')
     addtoset(balloon.collides_with, 'balloon')
-    balloon.inertia = 0.90
+    balloon.air_inertia = 0.9
+    balloon.land_inertia = 0.6
     balloon.mass = 0.1
     balloon.string_lag = 3
     balloon.string_facing = center
@@ -226,17 +229,19 @@ function draw_girl(px, py, girl)
     
     spr(frame, px, py, 1, 1, flip_x)
     pal()
-    print('v:('..girl.vel.x..','..girl.vel.y..')',
-        girl.pos.x*8, girl.pos.y*8, white)
-    if (girl.on_land) print('land', girl.pos.x*8, (girl.pos.y+0.5)*8)
+    -- print('v:('..girl.vel.x..','..girl.vel.y..')',
+    --     girl.pos.x*8, girl.pos.y*8, white)
+    -- if (girl.on_land) print('land', girl.pos.x*8, (girl.pos.y+0.5)*8)
 end
 function make_girl(tx, ty)
     girl = make_actor(tx, ty, 'girl')
     girl.draw = draw_girl
     girl.control = ai_walk_around
     girl.shirt_color = red
-    girl.accel.y = 0.2
+    girl.accel.y = 0.15
     girl.bounce = 0
+    girl.land_inertia = 0.3
+    girl.air_inertia = 0.95
     return girl
 end
 function ai_walk_around(girl)
@@ -261,7 +266,12 @@ function ai_walk_around(girl)
     local r2 = rnd(20)
     if (r2 <= 1 and girl.vel.y == 0) then
         -- jump
-        girl.vel.y -= 1.5
+        girl.vel.y -= 1
+        if (rnd(10) < 5) then
+            girl.vel.x += 0.7
+        else
+            girl.vel.x -= 0.7
+        end
         girl.accel.x = 0
     end
 end
@@ -313,6 +323,8 @@ function make_bird(tx, ty)
     bird.draw = draw_bird
     addtoset(bird.collides_with, 'balloon')
     bird.inertia = 1
+    bird.air_inertia = 1
+    bird.land_inertia = 1
     bird.mass = 0.5
     bird.vel.x = 0.2
     bird.frameticks = 1
@@ -417,6 +429,11 @@ function move_actor(a)
     if (a.should_advance.y) a.pos.y += a.vel.y
 
     -- decelerate
+    if (a.on_land) then
+        a.inertia = a.land_inertia
+    else
+        a.inertia = a.air_inertia
+    end
     a.vel = vmul(a.vel, a.inertia)
 
     a.frame += a.frameticks * (abs(a.vel.x) + abs(a.vel.y))
@@ -573,7 +590,7 @@ function bounce_actors(a, b, deets)
     a.vel = vsub(a.vel, vmul(norm, optimizedp * b.mass))
     b.vel = vadd(b.vel, vmul(norm, optimizedp * a.mass))
 
-
+    sfx(0)
 end
 
 
@@ -602,8 +619,8 @@ function snap(a, direction)
     end
 end
 
--- BUG: fast-moving balloons can shoot through single-width solid things
-BOUNCE_THRESH = 0.01
+-- bug: fast-moving balloons can shoot through single-width solid things
+bounce_thresh = 0.01
 function collide_with_walls(a)
     npos = vadd(a.pos, a.vel)
     a.on_land = false
@@ -617,7 +634,7 @@ function collide_with_walls(a)
         -- going up
         if (in_solid(a.pos.x, npos.y, a.w, a.h)) then
             
-            if (a.bounce > 0 and abs(a.vel.y) > BOUNCE_THRESH) then
+            if (a.bounce > 0 and abs(a.vel.y) > bounce_thresh) then
                 -- bounce off ceiling
                 a.should_advance.y = false
                 a.vel.y *= -a.bounce
@@ -630,7 +647,7 @@ function collide_with_walls(a)
     else
         -- going down
         if (in_solid(a.pos.x, npos.y, a.w, a.h)) then
-            if (a.bounce > 0 and abs(a.vel.y) > BOUNCE_THRESH) then
+            if (a.bounce > 0 and abs(a.vel.y) > bounce_thresh) then
                 -- bounce off ground
                 a.should_advance.y = false
                 a.vel.y *= -a.bounce
@@ -919,6 +936,8 @@ init=function()
     man = make_man(20, 13)
     man.vel.x = -0.06
     man.inertia = 1
+    man.land_inertia = 1
+    man.air_inertia = 1
     man.beholden_to_walls = false
     man.control = function(man)
         if (man.pos.x <= 13) then
@@ -1046,8 +1065,8 @@ f999999f0eeee7e00007000000007000000700000007777770000000044ffff0044ffff0081ff100
 00aaaa000eeeeee00007000000000700007000000f777777f7770000000888800008888004c8870004c88c0004788c000088880004fff0000000000000000000
 00a00a0000eeee00000700000000007007000000fffff77777777000000888800000880040788c0440c8870440c88c0400888800007700000000000000000000
 00800800000ee000000000000000000000000000ffffffff7777770000040040000044004f8888f44f8888f44f8888f400400400011110000000000000000000
-00000000bbbbbbbbbbbbbbbb333333330000000000000000000000000000000000000000004444f00f4444000000000000000000011110000111100000000000
-000000003bb3bbbb3bbbb3333333333300000000000000000000333000000000000000000f4444800844ff0f044044440000000001111f0001111f0000000000
+00000000bbbbbbbbbbbbbbbb333333330000000000000000000000000000000000000000004444f00f4444000400000000000000011110000111100000000000
+000000003bb3bbbb3bbbb3333333333300000000000000000000333000000000000000000f4444800844ff0f444044440000000001111f0001111f0000000000
 000000003333333333333333333333330044444444444400000333333000000000000300084884800888f180400844ff00000000011110000111100000000000
 000000003333333333333333333333330005000000005000003333233330000000a0030008844880084fff8000004ff100000000077770000777700000000000
 666666563333333333333333333333330044444444444400033333333230033000b03000008488000448880048888fff00000444011110000111100000000000
@@ -1204,8 +1223,8 @@ __map__
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __sfx__
-00010000386502d650346502865030650236502b6502a6501c65025650156502c650266500e6501d650166500865017650036500a65012650076500f6500d6500a65008650076500665005650046500165000000
-00040020051560a1560e15610156101560b6560a6560f1560e1560d1560b6560c1560d1560e6561015614156181561e1561f15626156271562a1562c1462e1362b6362c626331263312630136391362d12629116
+000100001c4501a44014440104400b420064100341001410014100e4000e4000e4002640003400034000640007400094000940009400084000640003400054000540004400024000240002400014000140000400
+00010000203361c3261a32617326133260f3160b31605316013160d3060b3060c3060d3060e3061030614306183061e3061f30626306273062a3062c3062e3062b3062c306333063330630306393062d30629306
 000000000000037050370501a050131202005037050191500000019150000000c1500000018150000000b1502215029150291501d150000000000000000000000000000000000000000000000000000000000000
 001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
