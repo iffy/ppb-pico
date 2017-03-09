@@ -239,7 +239,14 @@ function draw_girl(px, py, girl)
     if (girl.facing == left) flip_x = true
     pal(red, girl.shirt_color)
     local frame = 7 + girl.frame
-    if not(girl.standing) then
+    if (girl.climber.climbing) then
+        -- climbing
+        frame = 25
+        flip_x = false
+        if (girl.frame > 2) then
+            flip_x = true
+        end
+    elseif not(girl.standing) then
         -- jumping or falling
         frame = 12
         if (abs(girl.vel.x) >= 0.05) then
@@ -319,12 +326,6 @@ function ai_walk_around(girl)
             end
             girl.accel.x = 0
         end
-    end
-end
-chase_target = nil
-function chase_balloon(girl)
-    if (not(chase_target)) then
-        ai_walk_around(girl)
     end
 end
 
@@ -620,6 +621,16 @@ end
 
 function on_collide(a, b, deets)
     if (deets.bounce) bounce_actors(a, b, deets)
+    if (a.type == 'balloon' and b.type == 'girl') then
+        if (a.drawstring) then
+            local tether = make_tether(a, b, 3)
+            tether.onbreak = function()
+                destroy_tether(tether)
+                a.drawstring = true
+            end
+            a.drawstring = false
+        end
+    end
 end
 
 -- bounce two actors that have collided
@@ -791,9 +802,39 @@ function fsm_chaser(a)
             start_cooldown(a, 1)
         end,
         walking=function()
+            ladder = nearest_ladder(a)
+            if (ladder == 0) then
+                -- on a ladder
+                return 'climbing'
+            end
             if (cooling_off(a)) return
             return 'idle'
-        end
+        end,
+        off_walking=function()
+            a.accel.x = 0
+            a.vel.x = 0
+        end,
+
+        -- climbing
+        on_climbing=function()
+            a.shirt_color = orange
+            a.accel.y = 0
+            a.climber.climbing = true
+        end,
+        climbing=function()
+            ladder = nearest_ladder(a)
+            if (ladder == 0) then
+                a.vel.y = -0.05
+            else
+                return 'idle'
+            end
+        end,
+        off_climbing=function()
+            a.shirt_color = red
+            a.accel.y = gravity
+            a.climber.climbing = false
+        end,
+
     }
 end
 
@@ -1144,7 +1185,7 @@ init=function()
     choosemap(16,0,21,16)
     proudpink = make_balloon(2, 6)
     proudpink.control = control_balloon
-    chase_target = proudpink
+    proudpink.drawstring = true
     girl1 = make_girl(3, 10)
     girl1.control = fsm_chaser(girl1)
 
